@@ -8,6 +8,8 @@ use Carbon\Carbon;
 use Hypervel\Cache\Redis\Operations\IntersectionTags\AddEntry;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
+use Mockery as m;
+use Redis;
 
 /**
  * Tests for the AddEntry operation.
@@ -27,10 +29,21 @@ class AddEntryTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $connection->shouldReceive('zadd')
+        $pipeline = m::mock();
+
+        $connection->shouldReceive('multi')
+            ->once()
+            ->with(Redis::PIPELINE)
+            ->andReturn($pipeline);
+
+        $pipeline->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', now()->timestamp + 300, 'mykey')
-            ->andReturn(1);
+            ->andReturnSelf();
+
+        $pipeline->shouldReceive('exec')
+            ->once()
+            ->andReturn([1]);
 
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
@@ -44,10 +57,21 @@ class AddEntryTest extends TestCase
     public function testAddEntryWithZeroTtlStoresNegativeOne(): void
     {
         $connection = $this->mockConnection();
-        $connection->shouldReceive('zadd')
+        $pipeline = m::mock();
+
+        $connection->shouldReceive('multi')
+            ->once()
+            ->with(Redis::PIPELINE)
+            ->andReturn($pipeline);
+
+        $pipeline->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', -1, 'mykey')
-            ->andReturn(1);
+            ->andReturnSelf();
+
+        $pipeline->shouldReceive('exec')
+            ->once()
+            ->andReturn([1]);
 
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
@@ -61,10 +85,21 @@ class AddEntryTest extends TestCase
     public function testAddEntryWithNegativeTtlStoresNegativeOne(): void
     {
         $connection = $this->mockConnection();
-        $connection->shouldReceive('zadd')
+        $pipeline = m::mock();
+
+        $connection->shouldReceive('multi')
+            ->once()
+            ->with(Redis::PIPELINE)
+            ->andReturn($pipeline);
+
+        $pipeline->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', -1, 'mykey')
-            ->andReturn(1);
+            ->andReturnSelf();
+
+        $pipeline->shouldReceive('exec')
+            ->once()
+            ->andReturn([1]);
 
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
@@ -78,10 +113,21 @@ class AddEntryTest extends TestCase
     public function testAddEntryWithUpdateWhenNxCondition(): void
     {
         $connection = $this->mockConnection();
-        $connection->shouldReceive('zadd')
+        $pipeline = m::mock();
+
+        $connection->shouldReceive('multi')
+            ->once()
+            ->with(Redis::PIPELINE)
+            ->andReturn($pipeline);
+
+        $pipeline->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', 'NX', -1, 'mykey')
-            ->andReturn(1);
+            ->andReturnSelf();
+
+        $pipeline->shouldReceive('exec')
+            ->once()
+            ->andReturn([1]);
 
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
@@ -95,10 +141,21 @@ class AddEntryTest extends TestCase
     public function testAddEntryWithUpdateWhenXxCondition(): void
     {
         $connection = $this->mockConnection();
-        $connection->shouldReceive('zadd')
+        $pipeline = m::mock();
+
+        $connection->shouldReceive('multi')
+            ->once()
+            ->with(Redis::PIPELINE)
+            ->andReturn($pipeline);
+
+        $pipeline->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', 'XX', -1, 'mykey')
-            ->andReturn(1);
+            ->andReturnSelf();
+
+        $pipeline->shouldReceive('exec')
+            ->once()
+            ->andReturn([1]);
 
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
@@ -114,10 +171,21 @@ class AddEntryTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $connection->shouldReceive('zadd')
+        $pipeline = m::mock();
+
+        $connection->shouldReceive('multi')
+            ->once()
+            ->with(Redis::PIPELINE)
+            ->andReturn($pipeline);
+
+        $pipeline->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', 'GT', now()->timestamp + 60, 'mykey')
-            ->andReturn(1);
+            ->andReturnSelf();
+
+        $pipeline->shouldReceive('exec')
+            ->once()
+            ->andReturn([1]);
 
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
@@ -133,14 +201,26 @@ class AddEntryTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $connection->shouldReceive('zadd')
+        $pipeline = m::mock();
+
+        // Should use pipeline for multiple tags
+        $connection->shouldReceive('multi')
+            ->once()
+            ->with(Redis::PIPELINE)
+            ->andReturn($pipeline);
+
+        $pipeline->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', now()->timestamp + 60, 'mykey')
-            ->andReturn(1);
-        $connection->shouldReceive('zadd')
+            ->andReturnSelf();
+        $pipeline->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:posts:entries', now()->timestamp + 60, 'mykey')
-            ->andReturn(1);
+            ->andReturnSelf();
+
+        $pipeline->shouldReceive('exec')
+            ->once()
+            ->andReturn([1, 1]);
 
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
@@ -154,7 +234,8 @@ class AddEntryTest extends TestCase
     public function testAddEntryWithEmptyTagsArrayDoesNothing(): void
     {
         $connection = $this->mockConnection();
-        // No zadd calls should be made
+        // No pipeline or zadd calls should be made
+        $connection->shouldNotReceive('multi');
         $connection->shouldNotReceive('zadd');
 
         $store = $this->createStore($connection);
@@ -169,10 +250,21 @@ class AddEntryTest extends TestCase
     public function testAddEntryUsesCorrectPrefix(): void
     {
         $connection = $this->mockConnection();
-        $connection->shouldReceive('zadd')
+        $pipeline = m::mock();
+
+        $connection->shouldReceive('multi')
+            ->once()
+            ->with(Redis::PIPELINE)
+            ->andReturn($pipeline);
+
+        $pipeline->shouldReceive('zadd')
             ->once()
             ->with('custom_prefix:tag:users:entries', -1, 'mykey')
-            ->andReturn(1);
+            ->andReturnSelf();
+
+        $pipeline->shouldReceive('exec')
+            ->once()
+            ->andReturn([1]);
 
         $store = $this->createStore($connection, 'custom_prefix');
         $operation = new AddEntry($store->getContext());

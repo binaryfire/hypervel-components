@@ -271,4 +271,53 @@ class GetEntriesTest extends TestCase
 
         $this->assertSame(['key1', 'key2', 'key3'], $entries->all());
     }
+
+    /**
+     * @test
+     *
+     * Documents that deduplication is per-tag, not global. If the same key
+     * exists in multiple tags, it will appear multiple times in the result.
+     * This is intentional - the Flush operation handles this gracefully
+     * (deleting a non-existent key is a no-op).
+     */
+    public function testGetEntriesDoesNotDeduplicateAcrossTags(): void
+    {
+        $connection = $this->mockConnection();
+
+        // First tag has 'shared_key'
+        $connection->shouldReceive('zScan')
+            ->once()
+            ->with('prefix:tag:users:entries', m::any(), '*', 1000)
+            ->andReturnUsing(function ($key, &$cursor) {
+                $cursor = 0;
+
+                return ['shared_key' => 1, 'user_only' => 2];
+            });
+        $connection->shouldReceive('zScan')
+            ->once()
+            ->with('prefix:tag:users:entries', 0, '*', 1000)
+            ->andReturnNull();
+
+        // Second tag also has 'shared_key'
+        $connection->shouldReceive('zScan')
+            ->once()
+            ->with('prefix:tag:posts:entries', m::any(), '*', 1000)
+            ->andReturnUsing(function ($key, &$cursor) {
+                $cursor = 0;
+
+                return ['shared_key' => 1, 'post_only' => 2];
+            });
+        $connection->shouldReceive('zScan')
+            ->once()
+            ->with('prefix:tag:posts:entries', 0, '*', 1000)
+            ->andReturnNull();
+
+        $store = $this->createStore($connection);
+        $operation = new GetEntries($store->getContext());
+
+        $entries = $operation->execute(['tag:users:entries', 'tag:posts:entries']);
+
+        // 'shared_key' appears twice - once from each tag
+        $this->assertSame(['shared_key', 'user_only', 'shared_key', 'post_only'], $entries->all());
+    }
 }

@@ -59,17 +59,25 @@ class Flush
     /**
      * Delete the tag sorted sets.
      *
+     * Uses variadic del() to delete all tag keys in a single Redis call.
+     *
      * @param array<string> $tagNames Array of tag names
      */
     private function flushTags(array $tagNames): void
     {
+        if (empty($tagNames)) {
+            return;
+        }
+
         $prefix = $this->context->prefix();
 
         $this->context->withConnection(function (RedisConnection $conn) use ($prefix, $tagNames) {
-            foreach ($tagNames as $name) {
-                // Tag key format: "tag:{name}:entries"
-                $conn->del($prefix . "tag:{$name}:entries");
-            }
+            $tagKeys = array_map(
+                fn (string $name) => $prefix . "tag:{$name}:entries",
+                $tagNames
+            );
+
+            $conn->del(...$tagKeys);
         });
     }
 }

@@ -7,6 +7,7 @@ namespace Hypervel\Cache\Redis;
 use DateInterval;
 use DateTimeInterface;
 use Hypervel\Cache\Contracts\Store;
+use Hypervel\Cache\Events\KeyWritten;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Cache\TaggedCache;
 use Hypervel\Cache\TagSet;
@@ -32,12 +33,34 @@ class IntersectionTaggedCache extends TaggedCache
      */
     public function add(string $key, mixed $value, null|DateInterval|DateTimeInterface|int $ttl = null): bool
     {
-        $this->tags->addEntry(
-            $this->itemKey($key),
-            ! is_null($ttl) ? $this->getSeconds($ttl) : 0
-        );
+        if ($ttl !== null) {
+            $seconds = $this->getSeconds($ttl);
 
-        return parent::add($key, $value, $ttl);
+            if ($seconds <= 0) {
+                return false;
+            }
+
+            $this->tags->addEntry($this->itemKey($key), $seconds);
+
+            // RedisStore has atomic add() method
+            return $this->store->add($this->itemKey($key), $value, $seconds);
+        }
+
+        // Null TTL: non-atomic get + forever (matches Repository::add behavior)
+        $this->tags->addEntry($this->itemKey($key), 0);
+
+        if (is_null($this->get($key))) {
+            // Call store->forever directly to avoid double tag entry via $this->forever()
+            $result = $this->store->forever($this->itemKey($key), $value);
+
+            if ($result) {
+                $this->event(new KeyWritten($key, $value));
+            }
+
+            return $result;
+        }
+
+        return false;
     }
 
     /**
@@ -49,16 +72,25 @@ class IntersectionTaggedCache extends TaggedCache
             return $this->putMany($key, $value);
         }
 
-        if (is_null($ttl)) {
+        if ($ttl === null) {
             return $this->forever($key, $value);
         }
 
-        $this->tags->addEntry(
-            $this->itemKey($key),
-            $this->getSeconds($ttl)
-        );
+        $seconds = $this->getSeconds($ttl);
 
-        return parent::put($key, $value, $ttl);
+        if ($seconds <= 0) {
+            return $this->forget($key);
+        }
+
+        $this->tags->addEntry($this->itemKey($key), $seconds);
+
+        $result = $this->store->put($this->itemKey($key), $value, $seconds);
+
+        if ($result) {
+            $this->event(new KeyWritten($key, $value, $seconds));
+        }
+
+        return $result;
     }
 
     /**
@@ -68,7 +100,7 @@ class IntersectionTaggedCache extends TaggedCache
     {
         $this->tags->addEntry($this->itemKey($key), updateWhen: 'NX');
 
-        return parent::increment($key, $value);
+        return $this->store->increment($this->itemKey($key), $value);
     }
 
     /**
@@ -78,7 +110,7 @@ class IntersectionTaggedCache extends TaggedCache
     {
         $this->tags->addEntry($this->itemKey($key), updateWhen: 'NX');
 
-        return parent::decrement($key, $value);
+        return $this->store->decrement($this->itemKey($key), $value);
     }
 
     /**
@@ -88,7 +120,13 @@ class IntersectionTaggedCache extends TaggedCache
     {
         $this->tags->addEntry($this->itemKey($key));
 
-        return parent::forever($key, $value);
+        $result = $this->store->forever($this->itemKey($key), $value);
+
+        if ($result) {
+            $this->event(new KeyWritten($key, $value));
+        }
+
+        return $result;
     }
 
     /**

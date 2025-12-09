@@ -29,6 +29,11 @@ class IntersectionTaggedCacheTest extends TestCase
     private MockInterface|RedisConnection $connection;
 
     /**
+     * Mock for pipeline operations.
+     */
+    private MockInterface $pipeline;
+
+    /**
      * Set up test fixtures.
      */
     protected function setUp(): void
@@ -45,9 +50,10 @@ class IntersectionTaggedCacheTest extends TestCase
     {
         $key = sha1('tag:people:entries|tag:author:entries') . ':name';
 
-        // Tag set operations (zadd) via RedisConnection
-        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturn(1);
-        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturn(1);
+        // AddEntry uses pipeline for zadd operations
+        $this->pipeline->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturnSelf();
+        $this->pipeline->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturnSelf();
+        $this->pipeline->shouldReceive('exec')->once()->andReturn([1, 1]);
 
         // Cache operation (set) via RedisConnection
         $this->connection->shouldReceive('set')->once()->with("prefix:{$key}", serialize('Sally'))->andReturn(true);
@@ -55,8 +61,9 @@ class IntersectionTaggedCacheTest extends TestCase
         $this->redis->tags(['people', 'author'])->forever('name', 'Sally');
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':age';
-        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturn(1);
-        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturn(1);
+        $this->pipeline->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturnSelf();
+        $this->pipeline->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturnSelf();
+        $this->pipeline->shouldReceive('exec')->once()->andReturn([1, 1]);
         $this->connection->shouldReceive('set')->once()->with("prefix:{$key}", 30)->andReturn(true);
 
         $this->redis->tags(['people', 'author'])->forever('age', 30);
@@ -99,9 +106,11 @@ class IntersectionTaggedCacheTest extends TestCase
             'prefix:tag:author:entries:age'
         )->andReturn(4);
 
-        // resetTag() deletes tag sets via Forget operation (RedisConnection)
-        $this->connection->shouldReceive('del')->once()->with('prefix:tag:people:entries')->andReturn(1);
-        $this->connection->shouldReceive('del')->once()->with('prefix:tag:author:entries')->andReturn(1);
+        // flushTags() deletes tag sets in a single batched call
+        $this->connection->shouldReceive('del')->once()->with(
+            'prefix:tag:people:entries',
+            'prefix:tag:author:entries'
+        )->andReturn(2);
 
         $this->redis->tags(['people', 'author'])->flush();
     }
@@ -113,8 +122,9 @@ class IntersectionTaggedCacheTest extends TestCase
     {
         $key = sha1('tag:votes:entries') . ':person-1';
 
-        // Tag set operations (zadd) via RedisConnection
-        $this->connection->shouldReceive('zadd')->times(4)->with('prefix:tag:votes:entries', 'NX', -1, $key)->andReturn(1);
+        // AddEntry uses pipeline for zadd operations (4 times - 2 increments + 2 decrements)
+        $this->pipeline->shouldReceive('zadd')->times(4)->with('prefix:tag:votes:entries', 'NX', -1, $key)->andReturnSelf();
+        $this->pipeline->shouldReceive('exec')->times(4)->andReturn([1]);
 
         // Cache operations (increment/decrement) via RedisConnection
         $this->connection->shouldReceive('incrby')->once()->with("prefix:{$key}", 1)->andReturn(1);
@@ -136,19 +146,12 @@ class IntersectionTaggedCacheTest extends TestCase
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
-        // Create a pipeline mock
-        $pipeline = m::mock('Pipeline');
-        $pipeline->shouldReceive('zRemRangeByScore')
+        // FlushStaleEntries uses pipeline for zRemRangeByScore
+        $this->pipeline->shouldReceive('zRemRangeByScore')
             ->once()
             ->with('prefix:tag:people:entries', '0', (string) now()->timestamp)
             ->andReturnSelf();
-        $pipeline->shouldReceive('exec')->once()->andReturn([0]);
-
-        // multi(Redis::PIPELINE) returns the pipeline mock
-        $this->connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $this->pipeline->shouldReceive('exec')->once()->andReturn([0]);
 
         $this->redis->tags(['people'])->flushStale();
     }
@@ -162,9 +165,10 @@ class IntersectionTaggedCacheTest extends TestCase
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':name';
 
-        // Tag set operations (zadd) via RedisConnection
-        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturn(1);
-        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturn(1);
+        // AddEntry uses pipeline for zadd operations
+        $this->pipeline->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturnSelf();
+        $this->pipeline->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturnSelf();
+        $this->pipeline->shouldReceive('exec')->once()->andReturn([1, 1]);
 
         // Cache operation (setex) via RedisConnection
         $this->connection->shouldReceive('setex')->once()->with("prefix:{$key}", 5, serialize('Sally'))->andReturn(true);
@@ -172,8 +176,9 @@ class IntersectionTaggedCacheTest extends TestCase
         $this->redis->tags(['people', 'author'])->put('name', 'Sally', 5);
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':age';
-        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturn(1);
-        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturn(1);
+        $this->pipeline->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturnSelf();
+        $this->pipeline->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturnSelf();
+        $this->pipeline->shouldReceive('exec')->once()->andReturn([1, 1]);
         $this->connection->shouldReceive('setex')->once()->with("prefix:{$key}", 5, 30)->andReturn(true);
 
         $this->redis->tags(['people', 'author'])->put('age', 30, 5);
@@ -188,16 +193,18 @@ class IntersectionTaggedCacheTest extends TestCase
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':name';
 
-        // Tag set operations (zadd) via RedisConnection
-        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturn(1);
-        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturn(1);
+        // AddEntry uses pipeline for zadd operations
+        $this->pipeline->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturnSelf();
+        $this->pipeline->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturnSelf();
+        $this->pipeline->shouldReceive('exec')->once()->andReturn([1, 1]);
 
         // Cache operation (setex) via RedisConnection
         $this->connection->shouldReceive('setex')->once()->with("prefix:{$key}", 5, serialize('Sally'))->andReturn(true);
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':age';
-        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturn(1);
-        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturn(1);
+        $this->pipeline->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturnSelf();
+        $this->pipeline->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturnSelf();
+        $this->pipeline->shouldReceive('exec')->once()->andReturn([1, 1]);
         $this->connection->shouldReceive('setex')->once()->with("prefix:{$key}", 5, 30)->andReturn(true);
 
         $this->redis->tags(['people', 'author'])->put([
@@ -214,10 +221,17 @@ class IntersectionTaggedCacheTest extends TestCase
      */
     private function mockRedis(): void
     {
+        // Mock pipeline for batched operations
+        $this->pipeline = m::mock();
+
         // Mock RedisConnection for all operations
         $this->connection = m::mock(RedisConnection::class);
         $this->connection->shouldReceive('release')->zeroOrMoreTimes();
         $this->connection->shouldReceive('serialized')->andReturn(false)->byDefault();
+        $this->connection->shouldReceive('multi')
+            ->with(Redis::PIPELINE)
+            ->andReturn($this->pipeline)
+            ->byDefault();
 
         $pool = m::mock(RedisPool::class);
         $pool->shouldReceive('get')->andReturn($this->connection);

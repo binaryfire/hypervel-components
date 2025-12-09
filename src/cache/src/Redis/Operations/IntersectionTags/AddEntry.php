@@ -6,6 +6,7 @@ namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
 
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
+use Redis;
 
 /**
  * Adds a cache key reference to intersection tag sorted sets.
@@ -26,6 +27,8 @@ class AddEntry
     /**
      * Add a cache key entry to tag sorted sets.
      *
+     * Uses pipeline when multiple tags are provided for efficiency.
+     *
      * @param string $key The cache key (without prefix)
      * @param int $ttl TTL in seconds (0 means forever, stored as -1 score)
      * @param array<string> $tagIds Array of tag identifiers (e.g., "tag:users:entries")
@@ -33,6 +36,10 @@ class AddEntry
      */
     public function execute(string $key, int $ttl, array $tagIds, ?string $updateWhen = null): void
     {
+        if (empty($tagIds)) {
+            return;
+        }
+
         // Convert TTL to timestamp score:
         // - If TTL > 0: timestamp when this entry expires
         // - If TTL <= 0: -1 to indicate "forever" (won't be cleaned by ZREMRANGEBYSCORE)
@@ -41,17 +48,22 @@ class AddEntry
         $this->context->withConnection(function (RedisConnection $conn) use ($key, $score, $tagIds, $updateWhen) {
             $prefix = $this->context->prefix();
 
+            // Use pipeline for efficiency when adding to multiple tags
+            $pipeline = $conn->multi(Redis::PIPELINE);
+
             foreach ($tagIds as $tagId) {
                 $prefixedTagKey = $prefix . $tagId;
 
                 if ($updateWhen) {
                     // ZADD with flag (NX, XX, GT, LT)
-                    $conn->zadd($prefixedTagKey, $updateWhen, $score, $key);
+                    $pipeline->zadd($prefixedTagKey, $updateWhen, $score, $key);
                 } else {
                     // Standard ZADD
-                    $conn->zadd($prefixedTagKey, $score, $key);
+                    $pipeline->zadd($prefixedTagKey, $score, $key);
                 }
             }
+
+            $pipeline->exec();
         });
     }
 }

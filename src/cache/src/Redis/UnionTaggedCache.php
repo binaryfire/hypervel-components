@@ -9,10 +9,12 @@ use Closure;
 use DateInterval;
 use DateTimeInterface;
 use Generator;
+use Hypervel\Cache\Contracts\Store;
 use Hypervel\Cache\Events\CacheHit;
 use Hypervel\Cache\Events\CacheMissed;
 use Hypervel\Cache\Events\KeyWritten;
 use Hypervel\Cache\RedisStore;
+use Hypervel\Cache\TaggedCache;
 
 /**
  * Union-based tagged cache for Redis 8.0+ enhanced tagging.
@@ -22,12 +24,16 @@ use Hypervel\Cache\RedisStore;
  * - get() throws exception - use Cache::get() directly
  * - flush() deletes items with ANY of the specified tags (union semantics)
  * - Uses HSETEX for automatic hash field expiration
- *
- * Must extend IntersectionTaggedCache to satisfy the return type contract
- * of TaggableStore::tags() which returns TaggedCache.
  */
-class UnionTaggedCache extends IntersectionTaggedCache
+class UnionTaggedCache extends TaggedCache
 {
+    /**
+     * The cache store implementation.
+     *
+     * @var RedisStore
+     */
+    protected Store $store;
+
     /**
      * The tag set instance.
      */
@@ -40,11 +46,8 @@ class UnionTaggedCache extends IntersectionTaggedCache
         RedisStore $store,
         UnionTagSet $tags,
     ) {
-        // Call parent with the tag set - parent expects TagSet, we pass UnionTagSet
-        // We use a base TagSet to satisfy the parent, but keep our UnionTagSet reference
         parent::__construct($store, $tags);
 
-        // Store reference with narrowed type for our methods
         $this->unionTags = $tags;
     }
 
@@ -184,13 +187,7 @@ class UnionTaggedCache extends IntersectionTaggedCache
             }
         }
 
-        $result = $this->store->addWithTags($key, $value, $seconds, $this->unionTags->getNames());
-
-        if ($result) {
-            $this->event(new KeyWritten($key, $value, $seconds));
-        }
-
-        return $result;
+        return $this->store->addWithTags($key, $value, $seconds, $this->unionTags->getNames());
     }
 
     /**
@@ -212,13 +209,7 @@ class UnionTaggedCache extends IntersectionTaggedCache
      */
     public function increment(string $key, int $value = 1): bool|int
     {
-        $result = $this->store->incrementWithTags($key, $value, $this->unionTags->getNames());
-
-        if ($result !== false) {
-            $this->event(new KeyWritten($key, $result));
-        }
-
-        return $result;
+        return $this->store->incrementWithTags($key, $value, $this->unionTags->getNames());
     }
 
     /**
@@ -226,13 +217,7 @@ class UnionTaggedCache extends IntersectionTaggedCache
      */
     public function decrement(string $key, int $value = 1): bool|int
     {
-        $result = $this->store->decrementWithTags($key, $value, $this->unionTags->getNames());
-
-        if ($result !== false) {
-            $this->event(new KeyWritten($key, $result));
-        }
-
-        return $result;
+        return $this->store->decrementWithTags($key, $value, $this->unionTags->getNames());
     }
 
     /**

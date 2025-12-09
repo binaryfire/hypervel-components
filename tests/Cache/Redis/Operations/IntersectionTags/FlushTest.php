@@ -73,15 +73,11 @@ class FlushTest extends TestCase
             ->with('prefix:user_key1', 'prefix:user_key2', 'prefix:post_key1')
             ->andReturn(3);
 
-        // Should delete both tag sorted sets
+        // Should delete both tag sorted sets in a single batched call
         $connection->shouldReceive('del')
             ->once()
-            ->with('prefix:tag:users:entries')
-            ->andReturn(1);
-        $connection->shouldReceive('del')
-            ->once()
-            ->with('prefix:tag:posts:entries')
-            ->andReturn(1);
+            ->with('prefix:tag:users:entries', 'prefix:tag:posts:entries')
+            ->andReturn(2);
 
         $store = $this->createStore($connection);
         $operation = new Flush($store->getContext(), $getEntries);

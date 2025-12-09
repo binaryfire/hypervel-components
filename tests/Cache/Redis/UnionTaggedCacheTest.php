@@ -9,7 +9,6 @@ use Generator;
 use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\Pool\RedisPool;
 use Hyperf\Redis\RedisFactory;
-use Hypervel\Cache\Redis\IntersectionTaggedCache;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Cache\Redis\UnionTaggedCache;
 use Hypervel\Cache\Redis\UnionTagSet;
@@ -42,16 +41,6 @@ class UnionTaggedCacheTest extends TestCase
         parent::setUp();
 
         $this->mockStore();
-    }
-
-    /**
-     * @test
-     */
-    public function testIsInstanceOfIntersectionTaggedCache(): void
-    {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
-
-        $this->assertInstanceOf(IntersectionTaggedCache::class, $cache);
     }
 
     /**
