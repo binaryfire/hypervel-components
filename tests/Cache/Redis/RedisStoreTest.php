@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache;
+namespace Hypervel\Tests\Cache\Redis;
 
 use Hyperf\Redis\RedisFactory as Factory;
 use Hyperf\Redis\RedisProxy;
@@ -14,7 +14,7 @@ use Mockery as m;
  * @internal
  * @coversNothing
  */
-class CacheRedisStoreTest extends TestCase
+class RedisStoreTest extends TestCase
 {
     public function testGetReturnsNullWhenNotFound()
     {

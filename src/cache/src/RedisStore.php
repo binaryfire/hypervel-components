@@ -7,6 +7,8 @@ namespace Hypervel\Cache;
 use Hyperf\Redis\RedisFactory;
 use Hyperf\Redis\RedisProxy;
 use Hypervel\Cache\Contracts\LockProvider;
+use Hypervel\Cache\Redis\IntersectionTaggedCache;
+use Hypervel\Cache\Redis\IntersectionTagSet;
 
 class RedisStore extends TaggableStore implements LockProvider
 {
@@ -177,11 +179,11 @@ class RedisStore extends TaggableStore implements LockProvider
     /**
      * Begin executing a new tags operation.
      */
-    public function tags(mixed $names): RedisTaggedCache
+    public function tags(mixed $names): IntersectionTaggedCache
     {
-        return new RedisTaggedCache(
+        return new IntersectionTaggedCache(
             $this,
-            new RedisTagSet($this, is_array($names) ? $names : func_get_args())
+            new IntersectionTagSet($this, is_array($names) ? $names : func_get_args())
         );
     }
 

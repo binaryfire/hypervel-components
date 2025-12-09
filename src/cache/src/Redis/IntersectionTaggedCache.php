@@ -2,13 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache;
+namespace Hypervel\Cache\Redis;
 
 use DateInterval;
 use DateTimeInterface;
 use Hypervel\Cache\Contracts\Store;
+use Hypervel\Cache\RedisStore;
+use Hypervel\Cache\TaggedCache;
+use Hypervel\Cache\TagSet;
 
-class RedisTaggedCache extends TaggedCache
+class IntersectionTaggedCache extends TaggedCache
 {
     /**
      * The cache store implementation.
@@ -20,7 +23,7 @@ class RedisTaggedCache extends TaggedCache
     /**
      * The tag set instance.
      *
-     * @var RedisTagSet
+     * @var IntersectionTagSet
      */
     protected TagSet $tags;
 

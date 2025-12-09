@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache;
+namespace Hypervel\Cache\Redis;
 
 use Hyperf\Collection\LazyCollection;
 use Hypervel\Cache\Contracts\Store;
+use Hypervel\Cache\RedisStore;
+use Hypervel\Cache\TagSet;
 
-class RedisTagSet extends TagSet
+class IntersectionTagSet extends TagSet
 {
     /**
      * The cache store implementation.

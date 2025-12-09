@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache;
+namespace Hypervel\Tests\Cache\Redis;
 
 use Carbon\Carbon;
 use Hyperf\Redis\RedisFactory;
@@ -16,7 +16,7 @@ use Mockery\MockInterface;
  * @internal
  * @coversNothing
  */
-class CacheRedisTaggedCacheTest extends TestCase
+class IntersectionTaggedCacheTest extends TestCase
 {
     private RedisStore $redis;
 
