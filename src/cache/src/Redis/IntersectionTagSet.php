@@ -8,8 +8,6 @@ use Hyperf\Collection\LazyCollection;
 use Hypervel\Cache\Contracts\Store;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Cache\TagSet;
-use Hypervel\Redis\RedisConnection;
-use Redis;
 
 class IntersectionTagSet extends TagSet
 {
@@ -25,18 +23,7 @@ class IntersectionTagSet extends TagSet
      */
     public function addEntry(string $key, int $ttl = 0, ?string $updateWhen = null): void
     {
-        $ttl = $ttl > 0 ? now()->addSeconds($ttl)->getTimestamp() : -1;
-
-        $this->store->getContext()->withConnection(function (RedisConnection $conn) use ($key, $ttl, $updateWhen) {
-            foreach ($this->tagIds() as $tagKey) {
-                $prefixedKey = $this->store->getPrefix() . $tagKey;
-                if ($updateWhen) {
-                    $conn->zadd($prefixedKey, $updateWhen, $ttl, $key);
-                } else {
-                    $conn->zadd($prefixedKey, $ttl, $key);
-                }
-            }
-        });
+        $this->store->addIntersectionEntry($key, $ttl, $this->tagIds(), $updateWhen);
     }
 
     /**
@@ -44,44 +31,7 @@ class IntersectionTagSet extends TagSet
      */
     public function entries(): LazyCollection
     {
-        $context = $this->store->getContext();
-        $prefix = $this->store->getPrefix();
-
-        $defaultCursorValue = match (true) {
-            version_compare(phpversion('redis'), '6.1.0', '>=') => null,
-            default => '0',
-        };
-
-        return new LazyCollection(function () use ($context, $prefix, $defaultCursorValue) {
-            foreach ($this->tagIds() as $tagKey) {
-                // Collect all entries for this tag within one connection hold
-                $tagEntries = $context->withConnection(function (RedisConnection $conn) use ($prefix, $tagKey, $defaultCursorValue) {
-                    $cursor = $defaultCursorValue;
-                    $allEntries = [];
-
-                    do {
-                        $entries = $conn->zScan(
-                            $prefix . $tagKey,
-                            $cursor,
-                            '*',
-                            1000
-                        );
-
-                        if (! is_array($entries)) {
-                            break;
-                        }
-
-                        $allEntries = array_merge($allEntries, array_keys($entries));
-                    } while (((string) $cursor) !== $defaultCursorValue);
-
-                    return array_unique($allEntries);
-                });
-
-                foreach ($tagEntries as $entry) {
-                    yield $entry;
-                }
-            }
-        });
+        return $this->store->getIntersectionEntries($this->tagIds());
     }
 
     /**
@@ -89,19 +39,7 @@ class IntersectionTagSet extends TagSet
      */
     public function flushStaleEntries(): void
     {
-        $this->store->getContext()->withConnection(function (RedisConnection $conn) {
-            $pipeline = $conn->multi(Redis::PIPELINE);
-
-            foreach ($this->tagIds() as $tagKey) {
-                $pipeline->zRemRangeByScore(
-                    $this->store->getPrefix() . $tagKey,
-                    '0',
-                    (string) now()->getTimestamp()
-                );
-            }
-
-            $pipeline->exec();
-        });
+        $this->store->flushStaleIntersectionEntries($this->tagIds());
     }
 
     /**
@@ -136,5 +74,15 @@ class IntersectionTagSet extends TagSet
     public function tagKey(string $name): string
     {
         return "tag:{$name}:entries";
+    }
+
+    /**
+     * Get an array of tag identifiers for all of the tags in the set.
+     *
+     * @return array<string>
+     */
+    public function tagIds(): array
+    {
+        return parent::tagIds();
     }
 }

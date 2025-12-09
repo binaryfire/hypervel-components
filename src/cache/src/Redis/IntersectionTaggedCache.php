@@ -10,7 +10,6 @@ use Hypervel\Cache\Contracts\Store;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Cache\TaggedCache;
 use Hypervel\Cache\TagSet;
-use Hypervel\Redis\RedisConnection;
 
 class IntersectionTaggedCache extends TaggedCache
 {
@@ -97,26 +96,9 @@ class IntersectionTaggedCache extends TaggedCache
      */
     public function flush(): bool
     {
-        $this->flushValues();
-        $this->tags->flush();
+        $this->store->flushIntersectionTags($this->tags->tagIds(), $this->tags->getNames());
 
         return true;
-    }
-
-    /**
-     * Flush the individual cache entries for the tags.
-     */
-    protected function flushValues(): void
-    {
-        $entries = $this->tags->entries()
-            ->map(fn (string $key) => $this->store->getPrefix() . $key)
-            ->chunk(1000);
-
-        foreach ($entries as $cacheKeys) {
-            $this->store->getContext()->withConnection(function (RedisConnection $conn) use ($cacheKeys) {
-                $conn->del(...$cacheKeys);
-            });
-        }
     }
 
     /**
