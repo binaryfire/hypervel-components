@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations;
+namespace Hypervel\Tests\Cache\Redis\Operations\UnionTags;
 
 use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\Pool\RedisPool;
@@ -16,12 +16,12 @@ use Redis;
 use RedisCluster;
 
 /**
- * Tests for the PutWithTags operation.
+ * Tests for the Put operation (union tags).
  *
  * @internal
  * @coversNothing
  */
-class PutWithTagsTest extends TestCase
+class PutTest extends TestCase
 {
     use MocksRedisConnections;
 

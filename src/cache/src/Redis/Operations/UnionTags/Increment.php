@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations;
+namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
 use Exception;
 use Hypervel\Cache\Redis\Support\TaggedOperationErrorHandler;
@@ -18,7 +18,7 @@ use Hypervel\Redis\RedisConnection;
  * Optimization: Uses Lua script to perform increment, TTL check, and tag updates
  * in a single network round trip (1 RTT).
  */
-class IncrementWithTags
+class Increment
 {
     /**
      * Create a new increment with tags operation instance.

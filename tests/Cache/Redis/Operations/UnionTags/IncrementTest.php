@@ -2,45 +2,46 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations;
+namespace Hypervel\Tests\Cache\Redis\Operations\UnionTags;
 
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 
 /**
- * Tests for the DecrementWithTags operation.
+ * Tests for the Increment operation (union tags).
  *
  * @internal
  * @coversNothing
  */
-class DecrementWithTagsTest extends TestCase
+class IncrementTest extends TestCase
 {
     use MocksRedisConnections;
 
     /**
      * @test
      */
-    public function testDecrementWithTagsReturnsNewValue(): void
+    public function testIncrementWithTagsReturnsNewValue(): void
     {
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
 
+        // Lua script returns the incremented value
         $client->shouldReceive('evalSha')
             ->once()
             ->andReturn(false);
         $client->shouldReceive('eval')
             ->once()
             ->withArgs(function ($script, $args, $numKeys) {
-                $this->assertStringContainsString('DECRBY', $script);
+                $this->assertStringContainsString('INCRBY', $script);
                 $this->assertStringContainsString('TTL', $script);
                 $this->assertSame(2, $numKeys);
 
                 return true;
             })
-            ->andReturn(5); // New value after decrement
+            ->andReturn(15); // New value after increment
 
         $redis = $this->createStore($connection);
-        $result = $redis->decrementWithTags('counter', 5, ['stats']);
-        $this->assertSame(5, $result);
+        $result = $redis->incrementWithTags('counter', 5, ['stats']);
+        $this->assertSame(15, $result);
     }
 }

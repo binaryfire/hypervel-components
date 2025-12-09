@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations;
+namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
 use Exception;
 use Generator;

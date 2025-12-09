@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations;
+namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
 use Generator;
 use Hypervel\Cache\Redis\Support\Serialization;
@@ -15,7 +15,7 @@ use Hypervel\Redis\RedisConnection;
  * Iterates through all keys associated with the given tags,
  * fetching their values in batches for efficiency.
  */
-class TagItems
+class GetTagItems
 {
     private const CHUNK_SIZE = 1000;
 

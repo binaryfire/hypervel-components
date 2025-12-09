@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations;
+namespace Hypervel\Tests\Cache\Redis\Operations\UnionTags;
 
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 
 /**
- * Tests for the GetTaggedKeys operation.
+ * Tests for the GetTaggedKeys operation (union tags).
  *
  * @internal
  * @coversNothing

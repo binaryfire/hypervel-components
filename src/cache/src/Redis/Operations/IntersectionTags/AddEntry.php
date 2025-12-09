@@ -28,6 +28,8 @@ class AddEntry
      * Add a cache key entry to tag sorted sets.
      *
      * Uses pipeline when multiple tags are provided for efficiency.
+     * In cluster mode, uses sequential commands since RedisCluster
+     * doesn't support pipeline mode and tags may be in different slots.
      *
      * @param string $key The cache key (without prefix)
      * @param int $ttl TTL in seconds (0 means forever, stored as -1 score)
@@ -45,18 +47,31 @@ class AddEntry
         // - If TTL <= 0: -1 to indicate "forever" (won't be cleaned by ZREMRANGEBYSCORE)
         $score = $ttl > 0 ? now()->addSeconds($ttl)->getTimestamp() : -1;
 
+        // Cluster mode: RedisCluster doesn't support pipeline, and tags
+        // may be in different slots requiring sequential commands
+        if ($this->context->isCluster()) {
+            $this->executeCluster($key, $score, $tagIds, $updateWhen);
+            return;
+        }
+
+        $this->executePipeline($key, $score, $tagIds, $updateWhen);
+    }
+
+    /**
+     * Execute using pipeline for standard Redis (non-cluster).
+     */
+    private function executePipeline(string $key, int $score, array $tagIds, ?string $updateWhen): void
+    {
         $this->context->withConnection(function (RedisConnection $conn) use ($key, $score, $tagIds, $updateWhen) {
             $prefix = $this->context->prefix();
-
-            // Use pipeline for efficiency when adding to multiple tags
             $pipeline = $conn->multi(Redis::PIPELINE);
 
             foreach ($tagIds as $tagId) {
                 $prefixedTagKey = $prefix . $tagId;
 
                 if ($updateWhen) {
-                    // ZADD with flag (NX, XX, GT, LT)
-                    $pipeline->zadd($prefixedTagKey, $updateWhen, $score, $key);
+                    // ZADD with flag (NX, XX, GT, LT) - options must be array
+                    $pipeline->zadd($prefixedTagKey, [$updateWhen], $score, $key);
                 } else {
                     // Standard ZADD
                     $pipeline->zadd($prefixedTagKey, $score, $key);
@@ -64,6 +79,33 @@ class AddEntry
             }
 
             $pipeline->exec();
+        });
+    }
+
+    /**
+     * Execute using sequential commands for Redis Cluster.
+     *
+     * Each tag sorted set may be in a different slot, so we must
+     * execute ZADD commands sequentially rather than in a pipeline.
+     */
+    private function executeCluster(string $key, int $score, array $tagIds, ?string $updateWhen): void
+    {
+        $this->context->withConnection(function (RedisConnection $conn) use ($key, $score, $tagIds, $updateWhen) {
+            $client = $conn->client();
+            $prefix = $this->context->prefix();
+
+            foreach ($tagIds as $tagId) {
+                $prefixedTagKey = $prefix . $tagId;
+
+                if ($updateWhen) {
+                    // ZADD with flag (NX, XX, GT, LT)
+                    // RedisCluster requires options as array, not string
+                    $client->zadd($prefixedTagKey, [$updateWhen], $score, $key);
+                } else {
+                    // Standard ZADD
+                    $client->zadd($prefixedTagKey, $score, $key);
+                }
+            }
         });
     }
 }

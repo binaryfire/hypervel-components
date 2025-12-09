@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations;
+namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
 use Exception;
 use Hypervel\Cache\Redis\Support\TaggedOperationErrorHandler;
@@ -18,7 +18,7 @@ use Hypervel\Redis\RedisConnection;
  *
  * Performance: Uses atomic HSETEX for tag entries after successful add.
  */
-class AddWithTags
+class Add
 {
     /**
      * Create a new add with tags operation instance.

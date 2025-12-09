@@ -123,7 +123,8 @@ class IntersectionTaggedCacheTest extends TestCase
         $key = sha1('tag:votes:entries') . ':person-1';
 
         // AddEntry uses pipeline for zadd operations (4 times - 2 increments + 2 decrements)
-        $this->pipeline->shouldReceive('zadd')->times(4)->with('prefix:tag:votes:entries', 'NX', -1, $key)->andReturnSelf();
+        // Options must be array format for phpredis
+        $this->pipeline->shouldReceive('zadd')->times(4)->with('prefix:tag:votes:entries', ['NX'], -1, $key)->andReturnSelf();
         $this->pipeline->shouldReceive('exec')->times(4)->andReturn([1]);
 
         // Cache operations (increment/decrement) via RedisConnection
@@ -224,10 +225,22 @@ class IntersectionTaggedCacheTest extends TestCase
         // Mock pipeline for batched operations
         $this->pipeline = m::mock();
 
+        // Anonymous mock for Redis client (needed for isCluster() check)
+        $client = m::mock();
+        $client->shouldReceive('getOption')
+            ->with(Redis::OPT_COMPRESSION)
+            ->andReturn(Redis::COMPRESSION_NONE)
+            ->byDefault();
+        $client->shouldReceive('getOption')
+            ->with(Redis::OPT_PREFIX)
+            ->andReturn('')
+            ->byDefault();
+
         // Mock RedisConnection for all operations
         $this->connection = m::mock(RedisConnection::class);
         $this->connection->shouldReceive('release')->zeroOrMoreTimes();
         $this->connection->shouldReceive('serialized')->andReturn(false)->byDefault();
+        $this->connection->shouldReceive('client')->andReturn($client)->byDefault();
         $this->connection->shouldReceive('multi')
             ->with(Redis::PIPELINE)
             ->andReturn($this->pipeline)

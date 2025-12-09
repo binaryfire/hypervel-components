@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations;
+namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
 use Exception;
 use Hypervel\Cache\Redis\Support\TaggedOperationErrorHandler;
@@ -27,7 +27,7 @@ use Hypervel\Redis\RedisConnection;
  * Memory overhead: ~60 bytes per cached item (reverse index SET)
  * Command count: 4 base commands + (1 x N tags) with HSETEX optimization
  */
-class PutWithTags
+class Put
 {
     /**
      * Create a new put with tags operation instance.

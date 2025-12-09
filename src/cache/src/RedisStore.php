@@ -13,27 +13,28 @@ use Hypervel\Cache\Contracts\LockProvider;
 use Hypervel\Cache\Redis\IntersectionTaggedCache;
 use Hypervel\Cache\Redis\IntersectionTagSet;
 use Hypervel\Cache\Redis\Operations\Add;
-use Hypervel\Cache\Redis\Operations\AddWithTags;
 use Hypervel\Cache\Redis\Operations\Decrement;
-use Hypervel\Cache\Redis\Operations\DecrementWithTags;
 use Hypervel\Cache\Redis\Operations\Flush;
 use Hypervel\Cache\Redis\Operations\Forget;
 use Hypervel\Cache\Redis\Operations\Forever;
-use Hypervel\Cache\Redis\Operations\ForeverWithTags;
 use Hypervel\Cache\Redis\Operations\Get;
-use Hypervel\Cache\Redis\Operations\GetTaggedKeys;
 use Hypervel\Cache\Redis\Operations\Increment;
-use Hypervel\Cache\Redis\Operations\IncrementWithTags;
 use Hypervel\Cache\Redis\Operations\Many;
 use Hypervel\Cache\Redis\Operations\Put;
 use Hypervel\Cache\Redis\Operations\PutMany;
-use Hypervel\Cache\Redis\Operations\PutManyWithTags;
-use Hypervel\Cache\Redis\Operations\PutWithTags;
 use Hypervel\Cache\Redis\Operations\IntersectionTags\AddEntry as IntersectionAddEntry;
 use Hypervel\Cache\Redis\Operations\IntersectionTags\GetEntries as IntersectionGetEntries;
 use Hypervel\Cache\Redis\Operations\IntersectionTags\Flush as IntersectionFlush;
 use Hypervel\Cache\Redis\Operations\IntersectionTags\FlushStaleEntries as IntersectionFlushStaleEntries;
-use Hypervel\Cache\Redis\Operations\TagItems;
+use Hypervel\Cache\Redis\Operations\UnionTags\Add as UnionAdd;
+use Hypervel\Cache\Redis\Operations\UnionTags\Decrement as UnionDecrement;
+use Hypervel\Cache\Redis\Operations\UnionTags\Flush as UnionFlush;
+use Hypervel\Cache\Redis\Operations\UnionTags\Forever as UnionForever;
+use Hypervel\Cache\Redis\Operations\UnionTags\GetTaggedKeys;
+use Hypervel\Cache\Redis\Operations\UnionTags\GetTagItems;
+use Hypervel\Cache\Redis\Operations\UnionTags\Increment as UnionIncrement;
+use Hypervel\Cache\Redis\Operations\UnionTags\Put as UnionPut;
+use Hypervel\Cache\Redis\Operations\UnionTags\PutMany as UnionPutMany;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 
@@ -95,23 +96,25 @@ class RedisStore extends TaggableStore implements LockProvider
     private ?Flush $flushOperation = null;
 
     /**
-     * Cached tagged operation instances.
+     * Cached union tagged operation instances.
      */
-    private ?PutWithTags $putWithTagsOperation = null;
+    private ?UnionPut $unionPutOperation = null;
 
-    private ?AddWithTags $addWithTagsOperation = null;
+    private ?UnionAdd $unionAddOperation = null;
 
-    private ?ForeverWithTags $foreverWithTagsOperation = null;
+    private ?UnionForever $unionForeverOperation = null;
 
-    private ?IncrementWithTags $incrementWithTagsOperation = null;
+    private ?UnionIncrement $unionIncrementOperation = null;
 
-    private ?DecrementWithTags $decrementWithTagsOperation = null;
+    private ?UnionDecrement $unionDecrementOperation = null;
 
-    private ?PutManyWithTags $putManyWithTagsOperation = null;
+    private ?UnionPutMany $unionPutManyOperation = null;
 
     private ?GetTaggedKeys $getTaggedKeysOperation = null;
 
-    private ?TagItems $tagItemsOperation = null;
+    private ?GetTagItems $getTagItemsOperation = null;
+
+    private ?UnionFlush $unionFlushOperation = null;
 
     /**
      * Cached intersection tag operation instances.
@@ -237,66 +240,66 @@ class RedisStore extends TaggableStore implements LockProvider
     }
 
     /**
-     * Store an item in the cache with tags.
+     * Store an item in the cache with tags (union mode).
      *
      * @param array<int, string|int> $tags Array of tag names
      */
     public function putWithTags(string $key, mixed $value, int $seconds, array $tags): bool
     {
-        return $this->getPutWithTagsOperation()->execute($key, $value, $seconds, $tags);
+        return $this->getUnionPutOperation()->execute($key, $value, $seconds, $tags);
     }
 
     /**
-     * Store multiple items in the cache with tags.
+     * Store multiple items in the cache with tags (union mode).
      *
      * @param array<string, mixed> $values Key-value pairs
      * @param array<int, string|int> $tags Array of tag names
      */
     public function putManyWithTags(array $values, int $seconds, array $tags): bool
     {
-        return $this->getPutManyWithTagsOperation()->execute($values, $seconds, $tags);
+        return $this->getUnionPutManyOperation()->execute($values, $seconds, $tags);
     }
 
     /**
-     * Store an item in the cache if the key doesn't exist, with tags.
+     * Store an item in the cache if the key doesn't exist, with tags (union mode).
      *
      * @param array<int, string|int> $tags Array of tag names
      */
     public function addWithTags(string $key, mixed $value, int $seconds, array $tags): bool
     {
-        return $this->getAddWithTagsOperation()->execute($key, $value, $seconds, $tags);
+        return $this->getUnionAddOperation()->execute($key, $value, $seconds, $tags);
     }
 
     /**
-     * Store an item in the cache indefinitely with tags.
+     * Store an item in the cache indefinitely with tags (union mode).
      *
      * @param array<int, string|int> $tags Array of tag names
      */
     public function foreverWithTags(string $key, mixed $value, array $tags): bool
     {
-        return $this->getForeverWithTagsOperation()->execute($key, $value, $tags);
+        return $this->getUnionForeverOperation()->execute($key, $value, $tags);
     }
 
     /**
-     * Increment the value of an item in the cache with tags.
+     * Increment the value of an item in the cache with tags (union mode).
      *
      * @param array<int, string|int> $tags Array of tag names
      * @return int|false The new value after incrementing, or false on failure
      */
     public function incrementWithTags(string $key, int $value, array $tags): int|bool
     {
-        return $this->getIncrementWithTagsOperation()->execute($key, $value, $tags);
+        return $this->getUnionIncrementOperation()->execute($key, $value, $tags);
     }
 
     /**
-     * Decrement the value of an item in the cache with tags.
+     * Decrement the value of an item in the cache with tags (union mode).
      *
      * @param array<int, string|int> $tags Array of tag names
      * @return int|false The new value after decrementing, or false on failure
      */
     public function decrementWithTags(string $key, int $value, array $tags): int|bool
     {
-        return $this->getDecrementWithTagsOperation()->execute($key, $value, $tags);
+        return $this->getUnionDecrementOperation()->execute($key, $value, $tags);
     }
 
     /**
@@ -310,32 +313,27 @@ class RedisStore extends TaggableStore implements LockProvider
     }
 
     /**
-     * Flush all cache items that have any of the specified tags.
+     * Flush all cache items that have any of the specified tags (union mode).
      *
      * This is the lazy flush implementation - deletes items, reverse indexes,
      * tag hashes, and updates the registry.
      *
      * @param array<int, string|int> $tags Array of tag names
      */
-    public function flushTags(array $tags): void
+    public function flushTags(array $tags): bool
     {
-        // Will be implemented in Phase 7 (FlushTags operation)
-        // For now, throw an exception to indicate it's not yet implemented
-        throw new \RuntimeException(
-            'flushTags() will be implemented in Phase 7. ' .
-            'This method requires the FlushTags operation class.'
-        );
+        return $this->getUnionFlushOperation()->execute($tags);
     }
 
     /**
-     * Get all items (keys and values) for a set of tags.
+     * Get all items (keys and values) for a set of tags (union mode).
      *
      * @param array<int, string|int> $tags Array of tag names
      * @return Generator<string, mixed> Generator yielding key => value pairs
      */
     public function tagItems(array $tags): Generator
     {
-        return $this->getTagItemsOperation()->execute($tags);
+        return $this->getGetTagItemsOperation()->execute($tags);
     }
 
     /**
@@ -529,14 +527,15 @@ class RedisStore extends TaggableStore implements LockProvider
         $this->decrementOperation = null;
         $this->flushOperation = null;
         // Tagged operations (union mode)
-        $this->putWithTagsOperation = null;
-        $this->addWithTagsOperation = null;
-        $this->foreverWithTagsOperation = null;
-        $this->incrementWithTagsOperation = null;
-        $this->decrementWithTagsOperation = null;
-        $this->putManyWithTagsOperation = null;
+        $this->unionPutOperation = null;
+        $this->unionAddOperation = null;
+        $this->unionForeverOperation = null;
+        $this->unionIncrementOperation = null;
+        $this->unionDecrementOperation = null;
+        $this->unionPutManyOperation = null;
         $this->getTaggedKeysOperation = null;
-        $this->tagItemsOperation = null;
+        $this->getTagItemsOperation = null;
+        $this->unionFlushOperation = null;
         // Tagged operations (intersection mode)
         $this->intersectionAddEntryOperation = null;
         $this->intersectionGetEntriesOperation = null;
@@ -612,47 +611,47 @@ class RedisStore extends TaggableStore implements LockProvider
         return $this->flushOperation ??= new Flush($this->getContext());
     }
 
-    private function getPutWithTagsOperation(): PutWithTags
+    private function getUnionPutOperation(): UnionPut
     {
-        return $this->putWithTagsOperation ??= new PutWithTags(
+        return $this->unionPutOperation ??= new UnionPut(
             $this->getContext(),
             $this->getSerialization()
         );
     }
 
-    private function getAddWithTagsOperation(): AddWithTags
+    private function getUnionAddOperation(): UnionAdd
     {
-        return $this->addWithTagsOperation ??= new AddWithTags(
+        return $this->unionAddOperation ??= new UnionAdd(
             $this->getContext(),
             $this->getSerialization()
         );
     }
 
-    private function getForeverWithTagsOperation(): ForeverWithTags
+    private function getUnionForeverOperation(): UnionForever
     {
-        return $this->foreverWithTagsOperation ??= new ForeverWithTags(
+        return $this->unionForeverOperation ??= new UnionForever(
             $this->getContext(),
             $this->getSerialization()
         );
     }
 
-    private function getIncrementWithTagsOperation(): IncrementWithTags
+    private function getUnionIncrementOperation(): UnionIncrement
     {
-        return $this->incrementWithTagsOperation ??= new IncrementWithTags(
+        return $this->unionIncrementOperation ??= new UnionIncrement(
             $this->getContext()
         );
     }
 
-    private function getDecrementWithTagsOperation(): DecrementWithTags
+    private function getUnionDecrementOperation(): UnionDecrement
     {
-        return $this->decrementWithTagsOperation ??= new DecrementWithTags(
+        return $this->unionDecrementOperation ??= new UnionDecrement(
             $this->getContext()
         );
     }
 
-    private function getPutManyWithTagsOperation(): PutManyWithTags
+    private function getUnionPutManyOperation(): UnionPutMany
     {
-        return $this->putManyWithTagsOperation ??= new PutManyWithTags(
+        return $this->unionPutManyOperation ??= new UnionPutMany(
             $this->getContext(),
             $this->getSerialization()
         );
@@ -665,11 +664,19 @@ class RedisStore extends TaggableStore implements LockProvider
         );
     }
 
-    private function getTagItemsOperation(): TagItems
+    private function getGetTagItemsOperation(): GetTagItems
     {
-        return $this->tagItemsOperation ??= new TagItems(
+        return $this->getTagItemsOperation ??= new GetTagItems(
             $this->getContext(),
             $this->getSerialization(),
+            $this->getGetTaggedKeysOperation()
+        );
+    }
+
+    private function getUnionFlushOperation(): UnionFlush
+    {
+        return $this->unionFlushOperation ??= new UnionFlush(
+            $this->getContext(),
             $this->getGetTaggedKeysOperation()
         );
     }

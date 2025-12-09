@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations;
+namespace Hypervel\Tests\Cache\Redis\Operations\UnionTags;
 
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 
 /**
- * Tests for the AddWithTags operation.
+ * Tests for the Add operation (union tags).
  *
  * @internal
  * @coversNothing
  */
-class AddWithTagsTest extends TestCase
+class AddTest extends TestCase
 {
     use MocksRedisConnections;
 

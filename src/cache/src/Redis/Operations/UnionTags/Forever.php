@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations;
+namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
 use Exception;
 use Hypervel\Cache\Redis\Support\TaggedOperationErrorHandler;
@@ -19,7 +19,7 @@ use Hypervel\Redis\RedisConnection;
  * Optimization: Uses Lua script to perform set, tag cleanup (remove from old),
  * and tag addition (add to new) in a single network round trip (1 RTT).
  */
-class ForeverWithTags
+class Forever
 {
     /**
      * Create a new forever with tags operation instance.

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations;
+namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
 use Exception;
 use Hypervel\Cache\Redis\Support\TaggedOperationErrorHandler;
@@ -16,7 +16,7 @@ use Hypervel\Redis\RedisConnection;
  * Efficiently stores many items in a single pipelined operation,
  * handling tag assignment and cleanup for all items.
  */
-class PutManyWithTags
+class PutMany
 {
     private const CHUNK_SIZE = 1000;
 
