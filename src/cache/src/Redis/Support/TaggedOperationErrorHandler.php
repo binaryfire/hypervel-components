@@ -8,13 +8,18 @@ use Hypervel\Cache\Exceptions\RedisCacheException;
 use Throwable;
 
 /**
- * Handles Redis command errors and provides appropriate exceptions.
+ * Handles Redis command errors specific to tagged cache operations.
  *
- * This class provides consistent error handling across all Redis cache operations,
- * detecting specific error conditions and throwing appropriate exceptions with
- * helpful messages.
+ * Tagged operations use Redis 8.0+ commands (HSETEX, HEXPIRE) for hash field
+ * expiration. This handler detects and provides helpful error messages for:
+ *
+ * 1. Redis version errors - HSETEX/HEXPIRE require Redis 8.0+ or Valkey 9.0+
+ * 2. Cluster cross-slot errors - Bug detection for improperly batched operations
+ *
+ * This handler is ONLY used in *WithTags operations. Simple operations (get, put,
+ * increment, etc.) let exceptions bubble up naturally without special handling.
  */
-class CommandErrorHandler
+class TaggedOperationErrorHandler
 {
     /**
      * Handle a Redis command exception.

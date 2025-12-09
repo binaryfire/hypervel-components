@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hypervel\Tests\Cache\Redis\Support;
 
 use Hypervel\Cache\Exceptions\RedisCacheException;
-use Hypervel\Cache\Redis\Support\CommandErrorHandler;
+use Hypervel\Cache\Redis\Support\TaggedOperationErrorHandler;
 use Hypervel\Tests\TestCase;
 use RedisException;
 use RuntimeException;
@@ -14,7 +14,7 @@ use RuntimeException;
  * @internal
  * @coversNothing
  */
-class CommandErrorHandlerTest extends TestCase
+class TaggedOperationErrorHandlerTest extends TestCase
 {
     public function testThrowsRedisCacheExceptionForUnknownCommandError(): void
     {
@@ -23,7 +23,7 @@ class CommandErrorHandlerTest extends TestCase
         $this->expectException(RedisCacheException::class);
         $this->expectExceptionMessage('Union tagging requires Redis 8.0+');
 
-        CommandErrorHandler::handle($original);
+        TaggedOperationErrorHandler::handle($original);
     }
 
     public function testThrowsRedisCacheExceptionForErrUnknownError(): void
@@ -33,7 +33,7 @@ class CommandErrorHandlerTest extends TestCase
         $this->expectException(RedisCacheException::class);
         $this->expectExceptionMessage('Union tagging requires Redis 8.0+');
 
-        CommandErrorHandler::handle($original);
+        TaggedOperationErrorHandler::handle($original);
     }
 
     public function testThrowsRedisCacheExceptionForCommandNotFoundError(): void
@@ -43,7 +43,7 @@ class CommandErrorHandlerTest extends TestCase
         $this->expectException(RedisCacheException::class);
         $this->expectExceptionMessage('Union tagging requires Redis 8.0+');
 
-        CommandErrorHandler::handle($original);
+        TaggedOperationErrorHandler::handle($original);
     }
 
     public function testErrorMessageIsCaseInsensitive(): void
@@ -53,7 +53,7 @@ class CommandErrorHandlerTest extends TestCase
         $this->expectException(RedisCacheException::class);
         $this->expectExceptionMessage('Union tagging requires Redis 8.0+');
 
-        CommandErrorHandler::handle($original);
+        TaggedOperationErrorHandler::handle($original);
     }
 
     public function testThrowsRedisCacheExceptionForCrossSlotError(): void
@@ -63,7 +63,7 @@ class CommandErrorHandlerTest extends TestCase
         $this->expectException(RedisCacheException::class);
         $this->expectExceptionMessage('Cross-slot operation attempted');
 
-        CommandErrorHandler::handle($original);
+        TaggedOperationErrorHandler::handle($original);
     }
 
     public function testCrossSlotExceptionContainsBugReportMessage(): void
@@ -71,7 +71,7 @@ class CommandErrorHandlerTest extends TestCase
         $original = new RedisException('CROSSSLOT error');
 
         try {
-            CommandErrorHandler::handle($original);
+            TaggedOperationErrorHandler::handle($original);
             $this->fail('Expected RedisCacheException was not thrown');
         } catch (RedisCacheException $e) {
             $this->assertStringContainsString('Please report this issue', $e->getMessage());
@@ -86,7 +86,7 @@ class CommandErrorHandlerTest extends TestCase
         $this->expectException(RedisException::class);
         $this->expectExceptionMessage('Connection refused');
 
-        CommandErrorHandler::handle($original);
+        TaggedOperationErrorHandler::handle($original);
     }
 
     public function testRethrowsRuntimeExceptions(): void
@@ -96,7 +96,7 @@ class CommandErrorHandlerTest extends TestCase
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Some runtime error');
 
-        CommandErrorHandler::handle($original);
+        TaggedOperationErrorHandler::handle($original);
     }
 
     public function testExceptionContainsOriginalErrorMessage(): void
@@ -104,7 +104,7 @@ class CommandErrorHandlerTest extends TestCase
         $original = new RedisException("ERR unknown command 'HEXPIRE'");
 
         try {
-            CommandErrorHandler::handle($original);
+            TaggedOperationErrorHandler::handle($original);
             $this->fail('Expected RedisCacheException was not thrown');
         } catch (RedisCacheException $e) {
             $this->assertStringContainsString("ERR unknown command 'HEXPIRE'", $e->getMessage());
@@ -116,7 +116,7 @@ class CommandErrorHandlerTest extends TestCase
         $original = new RedisException("ERR unknown command 'HSETEX'");
 
         try {
-            CommandErrorHandler::handle($original);
+            TaggedOperationErrorHandler::handle($original);
             $this->fail('Expected RedisCacheException was not thrown');
         } catch (RedisCacheException $e) {
             $this->assertSame($original, $e->getPrevious());
@@ -128,7 +128,7 @@ class CommandErrorHandlerTest extends TestCase
         $original = new RedisException("ERR unknown command 'HSETEX'");
 
         try {
-            CommandErrorHandler::handle($original);
+            TaggedOperationErrorHandler::handle($original);
             $this->fail('Expected RedisCacheException was not thrown');
         } catch (RedisCacheException $e) {
             $this->assertStringContainsString('Redis 8.0+', $e->getMessage());

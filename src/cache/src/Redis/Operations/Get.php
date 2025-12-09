@@ -23,6 +23,9 @@ class Get
 
     /**
      * Execute the get operation.
+     *
+     * @param string $key The cache key (without prefix)
+     * @return mixed The cached value, or null if not found or on error
      */
     public function execute(string $key): mixed
     {

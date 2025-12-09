@@ -9,19 +9,18 @@ use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Store an item in the cache if the key doesn't exist.
+ * Store an item in the cache if it doesn't exist (non-tagged).
  *
- * Optimized using evalSha to cache the Lua script on the Redis server,
+ * Optimizes Laravel's default add() by using evalSha to cache the Lua script,
  * avoiding the overhead of re-sending script text on every call.
  *
- * Performance: Uses evalSha with automatic fallback to eval on NOSCRIPT error.
- * This follows the phpredis maintainer's recommendation for script caching.
+ * Performance: Uses evalSha with automatic fallback to eval on NOSCRIPT.
  */
 class Add
 {
     /**
-     * Lua script for atomic add operation.
-     * Checks if key exists, and only sets if it doesn't.
+     * The Lua script for atomic add operation.
+     * Must match Laravel's LuaScripts::add() exactly for hash compatibility.
      */
     private const LUA_SCRIPT = "return redis.call('exists',KEYS[1])<1 and redis.call('setex',KEYS[1],ARGV[2],ARGV[1])";
 
@@ -38,29 +37,28 @@ class Add
      *
      * @param string $key The cache key (without prefix)
      * @param mixed $value The value to store (will be serialized)
-     * @param int $seconds TTL in seconds (minimum 1)
-     * @return bool True if item was added, false if it already exists
+     * @param int $seconds TTL in seconds (must be > 0)
+     * @return bool True if item was added, false if it already exists or on failure
      */
     public function execute(string $key, mixed $value, int $seconds): bool
     {
         return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $seconds) {
             $client = $conn->client();
+            $prefix = $this->context->prefix();
 
-            // Use serializeForLua since phpredis doesn't auto-serialize ARGV
+            // Use serialization helper for Lua arguments
             $serializedValue = $this->serialization->serializeForLua($value);
 
             $args = [
-                $this->context->prefix() . $key,  // KEYS[1]
-                $serializedValue,                  // ARGV[1]
-                max(1, $seconds),                  // ARGV[2]
+                $prefix . $key,       // KEYS[1]
+                $serializedValue,     // ARGV[1]
+                max(1, $seconds),     // ARGV[2]
             ];
 
             $scriptHash = sha1(self::LUA_SCRIPT);
-
-            // Try evalSha first (uses cached script on Redis server)
             $result = $client->evalSha($scriptHash, $args, 1);
 
-            // evalSha returns false on NOSCRIPT error, fallback to eval
+            // evalSha returns false if script not loaded (NOSCRIPT), fall back to eval
             if ($result === false) {
                 $result = $client->eval(self::LUA_SCRIPT, $args, 1);
             }

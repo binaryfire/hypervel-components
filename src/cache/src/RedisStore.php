@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache;
 
+use Generator;
 use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\RedisFactory;
 use Hyperf\Redis\RedisProxy;
@@ -11,15 +12,23 @@ use Hypervel\Cache\Contracts\LockProvider;
 use Hypervel\Cache\Redis\IntersectionTaggedCache;
 use Hypervel\Cache\Redis\IntersectionTagSet;
 use Hypervel\Cache\Redis\Operations\Add;
+use Hypervel\Cache\Redis\Operations\AddWithTags;
 use Hypervel\Cache\Redis\Operations\Decrement;
+use Hypervel\Cache\Redis\Operations\DecrementWithTags;
 use Hypervel\Cache\Redis\Operations\Flush;
 use Hypervel\Cache\Redis\Operations\Forget;
 use Hypervel\Cache\Redis\Operations\Forever;
+use Hypervel\Cache\Redis\Operations\ForeverWithTags;
 use Hypervel\Cache\Redis\Operations\Get;
+use Hypervel\Cache\Redis\Operations\GetTaggedKeys;
 use Hypervel\Cache\Redis\Operations\Increment;
+use Hypervel\Cache\Redis\Operations\IncrementWithTags;
 use Hypervel\Cache\Redis\Operations\Many;
 use Hypervel\Cache\Redis\Operations\Put;
 use Hypervel\Cache\Redis\Operations\PutMany;
+use Hypervel\Cache\Redis\Operations\PutManyWithTags;
+use Hypervel\Cache\Redis\Operations\PutWithTags;
+use Hypervel\Cache\Redis\Operations\TagItems;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 
@@ -79,6 +88,25 @@ class RedisStore extends TaggableStore implements LockProvider
     private ?Decrement $decrementOperation = null;
 
     private ?Flush $flushOperation = null;
+
+    /**
+     * Cached tagged operation instances.
+     */
+    private ?PutWithTags $putWithTagsOperation = null;
+
+    private ?AddWithTags $addWithTagsOperation = null;
+
+    private ?ForeverWithTags $foreverWithTagsOperation = null;
+
+    private ?IncrementWithTags $incrementWithTagsOperation = null;
+
+    private ?DecrementWithTags $decrementWithTagsOperation = null;
+
+    private ?PutManyWithTags $putManyWithTagsOperation = null;
+
+    private ?GetTaggedKeys $getTaggedKeysOperation = null;
+
+    private ?TagItems $tagItemsOperation = null;
 
     /**
      * Create a new Redis store.
@@ -190,6 +218,108 @@ class RedisStore extends TaggableStore implements LockProvider
     public function flush(): bool
     {
         return $this->getFlushOperation()->execute();
+    }
+
+    /**
+     * Store an item in the cache with tags.
+     *
+     * @param array<int, string|int> $tags Array of tag names
+     */
+    public function putWithTags(string $key, mixed $value, int $seconds, array $tags): bool
+    {
+        return $this->getPutWithTagsOperation()->execute($key, $value, $seconds, $tags);
+    }
+
+    /**
+     * Store multiple items in the cache with tags.
+     *
+     * @param array<string, mixed> $values Key-value pairs
+     * @param array<int, string|int> $tags Array of tag names
+     */
+    public function putManyWithTags(array $values, int $seconds, array $tags): bool
+    {
+        return $this->getPutManyWithTagsOperation()->execute($values, $seconds, $tags);
+    }
+
+    /**
+     * Store an item in the cache if the key doesn't exist, with tags.
+     *
+     * @param array<int, string|int> $tags Array of tag names
+     */
+    public function addWithTags(string $key, mixed $value, int $seconds, array $tags): bool
+    {
+        return $this->getAddWithTagsOperation()->execute($key, $value, $seconds, $tags);
+    }
+
+    /**
+     * Store an item in the cache indefinitely with tags.
+     *
+     * @param array<int, string|int> $tags Array of tag names
+     */
+    public function foreverWithTags(string $key, mixed $value, array $tags): bool
+    {
+        return $this->getForeverWithTagsOperation()->execute($key, $value, $tags);
+    }
+
+    /**
+     * Increment the value of an item in the cache with tags.
+     *
+     * @param array<int, string|int> $tags Array of tag names
+     * @return int|false The new value after incrementing, or false on failure
+     */
+    public function incrementWithTags(string $key, int $value, array $tags): int|bool
+    {
+        return $this->getIncrementWithTagsOperation()->execute($key, $value, $tags);
+    }
+
+    /**
+     * Decrement the value of an item in the cache with tags.
+     *
+     * @param array<int, string|int> $tags Array of tag names
+     * @return int|false The new value after decrementing, or false on failure
+     */
+    public function decrementWithTags(string $key, int $value, array $tags): int|bool
+    {
+        return $this->getDecrementWithTagsOperation()->execute($key, $value, $tags);
+    }
+
+    /**
+     * Get all keys associated with a tag.
+     *
+     * @return Generator<string> Generator yielding cache keys (without prefix)
+     */
+    public function getTaggedKeys(string $tag): Generator
+    {
+        return $this->getGetTaggedKeysOperation()->execute($tag);
+    }
+
+    /**
+     * Flush all cache items that have any of the specified tags.
+     *
+     * This is the lazy flush implementation - deletes items, reverse indexes,
+     * tag hashes, and updates the registry.
+     *
+     * @param array<int, string|int> $tags Array of tag names
+     */
+    public function flushTags(array $tags): void
+    {
+        // Will be implemented in Phase 7 (FlushTags operation)
+        // For now, throw an exception to indicate it's not yet implemented
+        throw new \RuntimeException(
+            'flushTags() will be implemented in Phase 7. ' .
+            'This method requires the FlushTags operation class.'
+        );
+    }
+
+    /**
+     * Get all items (keys and values) for a set of tags.
+     *
+     * @param array<int, string|int> $tags Array of tag names
+     * @return Generator<string, mixed> Generator yielding key => value pairs
+     */
+    public function tagItems(array $tags): Generator
+    {
+        return $this->getTagItemsOperation()->execute($tags);
     }
 
     /**
@@ -332,6 +462,15 @@ class RedisStore extends TaggableStore implements LockProvider
         $this->incrementOperation = null;
         $this->decrementOperation = null;
         $this->flushOperation = null;
+        // Tagged operations
+        $this->putWithTagsOperation = null;
+        $this->addWithTagsOperation = null;
+        $this->foreverWithTagsOperation = null;
+        $this->incrementWithTagsOperation = null;
+        $this->decrementWithTagsOperation = null;
+        $this->putManyWithTagsOperation = null;
+        $this->getTaggedKeysOperation = null;
+        $this->tagItemsOperation = null;
     }
 
     private function getGetOperation(): Get
@@ -400,5 +539,67 @@ class RedisStore extends TaggableStore implements LockProvider
     private function getFlushOperation(): Flush
     {
         return $this->flushOperation ??= new Flush($this->getContext());
+    }
+
+    private function getPutWithTagsOperation(): PutWithTags
+    {
+        return $this->putWithTagsOperation ??= new PutWithTags(
+            $this->getContext(),
+            $this->getSerialization()
+        );
+    }
+
+    private function getAddWithTagsOperation(): AddWithTags
+    {
+        return $this->addWithTagsOperation ??= new AddWithTags(
+            $this->getContext(),
+            $this->getSerialization()
+        );
+    }
+
+    private function getForeverWithTagsOperation(): ForeverWithTags
+    {
+        return $this->foreverWithTagsOperation ??= new ForeverWithTags(
+            $this->getContext(),
+            $this->getSerialization()
+        );
+    }
+
+    private function getIncrementWithTagsOperation(): IncrementWithTags
+    {
+        return $this->incrementWithTagsOperation ??= new IncrementWithTags(
+            $this->getContext()
+        );
+    }
+
+    private function getDecrementWithTagsOperation(): DecrementWithTags
+    {
+        return $this->decrementWithTagsOperation ??= new DecrementWithTags(
+            $this->getContext()
+        );
+    }
+
+    private function getPutManyWithTagsOperation(): PutManyWithTags
+    {
+        return $this->putManyWithTagsOperation ??= new PutManyWithTags(
+            $this->getContext(),
+            $this->getSerialization()
+        );
+    }
+
+    private function getGetTaggedKeysOperation(): GetTaggedKeys
+    {
+        return $this->getTaggedKeysOperation ??= new GetTaggedKeys(
+            $this->getContext()
+        );
+    }
+
+    private function getTagItemsOperation(): TagItems
+    {
+        return $this->tagItemsOperation ??= new TagItems(
+            $this->getContext(),
+            $this->getSerialization(),
+            $this->getGetTaggedKeysOperation()
+        );
     }
 }
