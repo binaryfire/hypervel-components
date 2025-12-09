@@ -4,15 +4,33 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache;
 
+use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\RedisFactory;
 use Hyperf\Redis\RedisProxy;
 use Hypervel\Cache\Contracts\LockProvider;
 use Hypervel\Cache\Redis\IntersectionTaggedCache;
 use Hypervel\Cache\Redis\IntersectionTagSet;
+use Hypervel\Cache\Redis\Operations\Add;
+use Hypervel\Cache\Redis\Operations\Decrement;
+use Hypervel\Cache\Redis\Operations\Flush;
+use Hypervel\Cache\Redis\Operations\Forget;
+use Hypervel\Cache\Redis\Operations\Forever;
+use Hypervel\Cache\Redis\Operations\Get;
+use Hypervel\Cache\Redis\Operations\Increment;
+use Hypervel\Cache\Redis\Operations\Many;
+use Hypervel\Cache\Redis\Operations\Put;
+use Hypervel\Cache\Redis\Operations\PutMany;
+use Hypervel\Cache\Redis\Support\Serialization;
+use Hypervel\Cache\Redis\Support\StoreContext;
 
 class RedisStore extends TaggableStore implements LockProvider
 {
     protected RedisFactory $factory;
+
+    /**
+     * The pool factory instance (lazy-loaded if not provided).
+     */
+    protected ?PoolFactory $poolFactory = null;
 
     /**
      * A string that should be prepended to keys.
@@ -30,11 +48,49 @@ class RedisStore extends TaggableStore implements LockProvider
     protected string $lockConnection;
 
     /**
+     * Cached StoreContext instance.
+     */
+    private ?StoreContext $context = null;
+
+    /**
+     * Cached Serialization instance.
+     */
+    private ?Serialization $serialization = null;
+
+    /**
+     * Cached operation instances.
+     */
+    private ?Get $getOperation = null;
+
+    private ?Many $manyOperation = null;
+
+    private ?Put $putOperation = null;
+
+    private ?PutMany $putManyOperation = null;
+
+    private ?Add $addOperation = null;
+
+    private ?Forever $foreverOperation = null;
+
+    private ?Forget $forgetOperation = null;
+
+    private ?Increment $incrementOperation = null;
+
+    private ?Decrement $decrementOperation = null;
+
+    private ?Flush $flushOperation = null;
+
+    /**
      * Create a new Redis store.
      */
-    public function __construct(RedisFactory $factory, string $prefix = '', string $connection = 'default')
-    {
+    public function __construct(
+        RedisFactory $factory,
+        string $prefix = '',
+        string $connection = 'default',
+        ?PoolFactory $poolFactory = null,
+    ) {
         $this->factory = $factory;
+        $this->poolFactory = $poolFactory;
         $this->setPrefix($prefix);
         $this->setConnection($connection);
     }
@@ -44,9 +100,7 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     public function get(string $key): mixed
     {
-        $value = $this->connection()->get($this->prefix . $key);
-
-        return $this->unserialize($value);
+        return $this->getGetOperation()->execute($key);
     }
 
     /**
@@ -55,17 +109,7 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     public function many(array $keys): array
     {
-        $results = [];
-
-        $values = $this->connection()->mget(array_map(function ($key) {
-            return $this->prefix . $key;
-        }, $keys));
-
-        foreach ($values as $index => $value) {
-            $results[$keys[$index]] = $this->unserialize($value);
-        }
-
-        return $results;
+        return $this->getManyOperation()->execute($keys);
     }
 
     /**
@@ -73,11 +117,7 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     public function put(string $key, mixed $value, int $seconds): bool
     {
-        return (bool) $this->connection()->setex(
-            $this->prefix . $key,
-            (int) max(1, $seconds),
-            $this->serialize($value)
-        );
+        return $this->getPutOperation()->execute($key, $value, $seconds);
     }
 
     /**
@@ -85,19 +125,7 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     public function putMany(array $values, int $seconds): bool
     {
-        $this->connection()->multi();
-
-        $manyResult = null;
-
-        foreach ($values as $key => $value) {
-            $result = $this->put($key, $value, $seconds);
-
-            $manyResult = is_null($manyResult) ? $result : $result && $manyResult;
-        }
-
-        $this->connection()->exec();
-
-        return $manyResult ?: false;
+        return $this->getPutManyOperation()->execute($values, $seconds);
     }
 
     /**
@@ -105,17 +133,7 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     public function add(string $key, mixed $value, int $seconds): bool
     {
-        $lua = "return redis.call('exists',KEYS[1])<1 and redis.call('setex',KEYS[1],ARGV[2],ARGV[1])";
-
-        return (bool) $this->connection()->eval(
-            $lua,
-            [
-                $this->prefix . $key,
-                $this->serialize($value),
-                (int) max(1, $seconds),
-            ],
-            1
-        );
+        return $this->getAddOperation()->execute($key, $value, $seconds);
     }
 
     /**
@@ -123,7 +141,7 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     public function increment(string $key, int $value = 1): int
     {
-        return $this->connection()->incrby($this->prefix . $key, $value);
+        return $this->getIncrementOperation()->execute($key, $value);
     }
 
     /**
@@ -131,7 +149,7 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     public function decrement(string $key, int $value = 1): int
     {
-        return $this->connection()->decrby($this->prefix . $key, $value);
+        return $this->getDecrementOperation()->execute($key, $value);
     }
 
     /**
@@ -139,7 +157,7 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     public function forever(string $key, mixed $value): bool
     {
-        return (bool) $this->connection()->set($this->prefix . $key, $this->serialize($value));
+        return $this->getForeverOperation()->execute($key, $value);
     }
 
     /**
@@ -163,7 +181,7 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     public function forget(string $key): bool
     {
-        return (bool) $this->connection()->del($this->prefix . $key);
+        return $this->getForgetOperation()->execute($key);
     }
 
     /**
@@ -171,9 +189,7 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     public function flush(): bool
     {
-        $this->connection()->flushdb();
-
-        return true;
+        return $this->getFlushOperation()->execute();
     }
 
     /**
@@ -209,6 +225,7 @@ class RedisStore extends TaggableStore implements LockProvider
     public function setConnection(string $connection): void
     {
         $this->connection = $connection;
+        $this->clearCachedInstances();
     }
 
     /**
@@ -243,6 +260,27 @@ class RedisStore extends TaggableStore implements LockProvider
     public function setPrefix(string $prefix): void
     {
         $this->prefix = ! empty($prefix) ? $prefix . ':' : '';
+        $this->clearCachedInstances();
+    }
+
+    /**
+     * Get the StoreContext instance.
+     */
+    public function getContext(): StoreContext
+    {
+        return $this->context ??= new StoreContext(
+            $this->getPoolFactory(),
+            $this->connection,
+            $this->prefix
+        );
+    }
+
+    /**
+     * Get the PoolFactory instance, lazily resolving if not provided.
+     */
+    protected function getPoolFactory(): PoolFactory
+    {
+        return $this->poolFactory ??= $this->resolvePoolFactory();
     }
 
     /**
@@ -250,8 +288,7 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     protected function serialize(mixed $value): mixed
     {
-        // is_nan() doesn't work in strict mode
-        return is_numeric($value) && ! in_array($value, [INF, -INF]) && ($value === $value) ? $value : serialize($value);
+        return $this->getSerialization()->serialize($value);
     }
 
     /**
@@ -259,9 +296,109 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     protected function unserialize(mixed $value): mixed
     {
-        if ($value === null || $value === false) {
-            return null;
-        }
-        return is_numeric($value) ? $value : unserialize((string) $value);
+        return $this->getSerialization()->unserialize($value);
+    }
+
+    /**
+     * Get the Serialization instance.
+     */
+    private function getSerialization(): Serialization
+    {
+        return $this->serialization ??= new Serialization($this->getContext());
+    }
+
+    /**
+     * Resolve the PoolFactory from the container.
+     */
+    private function resolvePoolFactory(): PoolFactory
+    {
+        return \Hyperf\Support\make(PoolFactory::class);
+    }
+
+    /**
+     * Clear all cached instances when connection or prefix changes.
+     */
+    private function clearCachedInstances(): void
+    {
+        $this->context = null;
+        $this->serialization = null;
+        $this->getOperation = null;
+        $this->manyOperation = null;
+        $this->putOperation = null;
+        $this->putManyOperation = null;
+        $this->addOperation = null;
+        $this->foreverOperation = null;
+        $this->forgetOperation = null;
+        $this->incrementOperation = null;
+        $this->decrementOperation = null;
+        $this->flushOperation = null;
+    }
+
+    private function getGetOperation(): Get
+    {
+        return $this->getOperation ??= new Get(
+            $this->getContext(),
+            $this->getSerialization()
+        );
+    }
+
+    private function getManyOperation(): Many
+    {
+        return $this->manyOperation ??= new Many(
+            $this->getContext(),
+            $this->getSerialization()
+        );
+    }
+
+    private function getPutOperation(): Put
+    {
+        return $this->putOperation ??= new Put(
+            $this->getContext(),
+            $this->getSerialization()
+        );
+    }
+
+    private function getPutManyOperation(): PutMany
+    {
+        return $this->putManyOperation ??= new PutMany(
+            $this->getContext(),
+            $this->getSerialization()
+        );
+    }
+
+    private function getAddOperation(): Add
+    {
+        return $this->addOperation ??= new Add(
+            $this->getContext(),
+            $this->getSerialization()
+        );
+    }
+
+    private function getForeverOperation(): Forever
+    {
+        return $this->foreverOperation ??= new Forever(
+            $this->getContext(),
+            $this->getSerialization()
+        );
+    }
+
+    private function getForgetOperation(): Forget
+    {
+        return $this->forgetOperation ??= new Forget($this->getContext());
+    }
+
+    private function getIncrementOperation(): Increment
+    {
+        return $this->incrementOperation ??= new Increment($this->getContext());
+    }
+
+    private function getDecrementOperation(): Decrement
+    {
+        return $this->decrementOperation ??= new Decrement($this->getContext());
+    }
+
+    private function getFlushOperation(): Flush
+    {
+        return $this->flushOperation ??= new Flush($this->getContext());
     }
 }

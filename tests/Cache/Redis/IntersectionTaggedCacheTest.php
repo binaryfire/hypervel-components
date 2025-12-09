@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Hypervel\Tests\Cache\Redis;
 
 use Carbon\Carbon;
+use Hyperf\Redis\Pool\PoolFactory;
+use Hyperf\Redis\Pool\RedisPool;
 use Hyperf\Redis\RedisFactory;
-use Hyperf\Redis\RedisProxy;
 use Hypervel\Cache\RedisStore;
+use Hypervel\Redis\RedisConnection;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
 use Mockery\MockInterface;
+use Redis;
 
 /**
  * @internal
@@ -20,9 +23,14 @@ class IntersectionTaggedCacheTest extends TestCase
 {
     private RedisStore $redis;
 
-    /** @var MockInterface|RedisProxy */
-    private RedisProxy $redisProxy;
+    /**
+     * Mock for RedisConnection (all operations go through PoolFactory now).
+     */
+    private MockInterface|RedisConnection $connection;
 
+    /**
+     * Set up test fixtures.
+     */
     protected function setUp(): void
     {
         parent::setUp();
@@ -30,23 +38,31 @@ class IntersectionTaggedCacheTest extends TestCase
         $this->mockRedis();
     }
 
-    public function testTagEntriesCanBeStoredForever()
+    /**
+     * @test
+     */
+    public function testTagEntriesCanBeStoredForever(): void
     {
         $key = sha1('tag:people:entries|tag:author:entries') . ':name';
-        $this->redisProxy->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturn('OK');
-        $this->redisProxy->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturn('OK');
-        $this->redisProxy->shouldReceive('set')->once()->with("prefix:{$key}", serialize('Sally'))->andReturn('OK');
+
+        // Tag set operations (zadd) via RedisConnection
+        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturn(1);
+        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturn(1);
+
+        // Cache operation (set) via RedisConnection
+        $this->connection->shouldReceive('set')->once()->with("prefix:{$key}", serialize('Sally'))->andReturn(true);
 
         $this->redis->tags(['people', 'author'])->forever('name', 'Sally');
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':age';
-        $this->redisProxy->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturn('OK');
-        $this->redisProxy->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturn('OK');
-        $this->redisProxy->shouldReceive('set')->once()->with("prefix:{$key}", 30)->andReturn('OK');
+        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturn(1);
+        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturn(1);
+        $this->connection->shouldReceive('set')->once()->with("prefix:{$key}", 30)->andReturn(true);
 
         $this->redis->tags(['people', 'author'])->forever('age', 30);
 
-        $this->redisProxy
+        // Flush: entries() scans via RedisConnection
+        $this->connection
             ->shouldReceive('zScan')
             ->once()
             ->with('prefix:tag:people:entries', null, '*', 1000)
@@ -55,12 +71,12 @@ class IntersectionTaggedCacheTest extends TestCase
 
                 return ['tag:people:entries:name' => 0, 'tag:people:entries:age' => 0];
             });
-        $this->redisProxy
+        $this->connection
             ->shouldReceive('zScan')
             ->once()
             ->with('prefix:tag:people:entries', 0, '*', 1000)
             ->andReturnNull();
-        $this->redisProxy
+        $this->connection
             ->shouldReceive('zScan')
             ->once()
             ->with('prefix:tag:author:entries', null, '*', 1000)
@@ -69,33 +85,42 @@ class IntersectionTaggedCacheTest extends TestCase
 
                 return ['tag:author:entries:name' => 0, 'tag:author:entries:age' => 0];
             });
-        $this->redisProxy
+        $this->connection
             ->shouldReceive('zScan')
             ->once()
             ->with('prefix:tag:author:entries', 0, '*', 1000)
             ->andReturnNull();
 
-        $this->redisProxy->shouldReceive('del')->once()->with(
+        // flushValues() deletes cache entries via RedisConnection
+        $this->connection->shouldReceive('del')->once()->with(
             'prefix:tag:people:entries:name',
             'prefix:tag:people:entries:age',
             'prefix:tag:author:entries:name',
             'prefix:tag:author:entries:age'
-        )->andReturn('OK');
+        )->andReturn(4);
 
-        $this->redisProxy->shouldReceive('del')->once()->with('prefix:tag:people:entries')->andReturn('OK');
-        $this->redisProxy->shouldReceive('del')->once()->with('prefix:tag:author:entries')->andReturn('OK');
+        // resetTag() deletes tag sets via Forget operation (RedisConnection)
+        $this->connection->shouldReceive('del')->once()->with('prefix:tag:people:entries')->andReturn(1);
+        $this->connection->shouldReceive('del')->once()->with('prefix:tag:author:entries')->andReturn(1);
 
         $this->redis->tags(['people', 'author'])->flush();
     }
 
-    public function testTagEntriesCanBeIncremented()
+    /**
+     * @test
+     */
+    public function testTagEntriesCanBeIncremented(): void
     {
         $key = sha1('tag:votes:entries') . ':person-1';
-        $this->redisProxy->shouldReceive('zadd')->times(4)->with('prefix:tag:votes:entries', 'NX', -1, $key)->andReturn('OK');
-        $this->redisProxy->shouldReceive('incrby')->once()->with("prefix:{$key}", 1)->andReturn(1);
-        $this->redisProxy->shouldReceive('incrby')->once()->with("prefix:{$key}", 1)->andReturn(2);
-        $this->redisProxy->shouldReceive('decrby')->once()->with("prefix:{$key}", 1)->andReturn(1);
-        $this->redisProxy->shouldReceive('decrby')->once()->with("prefix:{$key}", 1)->andReturn(0);
+
+        // Tag set operations (zadd) via RedisConnection
+        $this->connection->shouldReceive('zadd')->times(4)->with('prefix:tag:votes:entries', 'NX', -1, $key)->andReturn(1);
+
+        // Cache operations (increment/decrement) via RedisConnection
+        $this->connection->shouldReceive('incrby')->once()->with("prefix:{$key}", 1)->andReturn(1);
+        $this->connection->shouldReceive('incrby')->once()->with("prefix:{$key}", 1)->andReturn(2);
+        $this->connection->shouldReceive('decrby')->once()->with("prefix:{$key}", 1)->andReturn(1);
+        $this->connection->shouldReceive('decrby')->once()->with("prefix:{$key}", 1)->andReturn(0);
 
         $this->assertSame(1, $this->redis->tags(['votes'])->increment('person-1'));
         $this->assertSame(2, $this->redis->tags(['votes'])->increment('person-1'));
@@ -104,53 +129,76 @@ class IntersectionTaggedCacheTest extends TestCase
         $this->assertSame(0, $this->redis->tags(['votes'])->decrement('person-1'));
     }
 
-    public function testStaleEntriesCanBeFlushed()
+    /**
+     * @test
+     */
+    public function testStaleEntriesCanBeFlushed(): void
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
-        $pipe = m::mock(RedisProxy::class);
-        $pipe->shouldReceive('zremrangebyscore')->once()->with('prefix:tag:people:entries', 0, now()->timestamp)->andReturn('OK');
-        $this->redisProxy->shouldReceive('pipeline')->once()->withArgs(function ($callback) use ($pipe) {
-            $callback($pipe);
+        // Create a pipeline mock
+        $pipeline = m::mock('Pipeline');
+        $pipeline->shouldReceive('zRemRangeByScore')
+            ->once()
+            ->with('prefix:tag:people:entries', '0', (string) now()->timestamp)
+            ->andReturnSelf();
+        $pipeline->shouldReceive('exec')->once()->andReturn([0]);
 
-            return true;
-        });
+        // multi(Redis::PIPELINE) returns the pipeline mock
+        $this->connection->shouldReceive('multi')
+            ->once()
+            ->with(Redis::PIPELINE)
+            ->andReturn($pipeline);
 
         $this->redis->tags(['people'])->flushStale();
     }
 
-    public function testPut()
+    /**
+     * @test
+     */
+    public function testPut(): void
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':name';
-        $this->redisProxy->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturn('OK');
-        $this->redisProxy->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturn('OK');
-        $this->redisProxy->shouldReceive('setex')->once()->with("prefix:{$key}", 5, serialize('Sally'))->andReturn('OK');
+
+        // Tag set operations (zadd) via RedisConnection
+        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturn(1);
+        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturn(1);
+
+        // Cache operation (setex) via RedisConnection
+        $this->connection->shouldReceive('setex')->once()->with("prefix:{$key}", 5, serialize('Sally'))->andReturn(true);
 
         $this->redis->tags(['people', 'author'])->put('name', 'Sally', 5);
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':age';
-        $this->redisProxy->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturn('OK');
-        $this->redisProxy->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturn('OK');
-        $this->redisProxy->shouldReceive('setex')->once()->with("prefix:{$key}", 5, 30)->andReturn('OK');
+        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturn(1);
+        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturn(1);
+        $this->connection->shouldReceive('setex')->once()->with("prefix:{$key}", 5, 30)->andReturn(true);
 
         $this->redis->tags(['people', 'author'])->put('age', 30, 5);
     }
 
-    public function testPutWithArray()
+    /**
+     * @test
+     */
+    public function testPutWithArray(): void
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':name';
-        $this->redisProxy->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturn('OK');
-        $this->redisProxy->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturn('OK');
-        $this->redisProxy->shouldReceive('setex')->once()->with("prefix:{$key}", 5, serialize('Sally'))->andReturn('OK');
+
+        // Tag set operations (zadd) via RedisConnection
+        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturn(1);
+        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturn(1);
+
+        // Cache operation (setex) via RedisConnection
+        $this->connection->shouldReceive('setex')->once()->with("prefix:{$key}", 5, serialize('Sally'))->andReturn(true);
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':age';
-        $this->redisProxy->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturn('OK');
-        $this->redisProxy->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturn('OK');
-        $this->redisProxy->shouldReceive('setex')->once()->with("prefix:{$key}", 5, 30)->andReturn('OK');
+        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', now()->timestamp + 5, $key)->andReturn(1);
+        $this->connection->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', now()->timestamp + 5, $key)->andReturn(1);
+        $this->connection->shouldReceive('setex')->once()->with("prefix:{$key}", 5, 30)->andReturn(true);
 
         $this->redis->tags(['people', 'author'])->put([
             'name' => 'Sally',
@@ -158,11 +206,28 @@ class IntersectionTaggedCacheTest extends TestCase
         ], 5);
     }
 
-    private function mockRedis()
+    /**
+     * Set up the Redis mocks.
+     *
+     * All operations now go through PoolFactory -> RedisConnection.
+     * No more dual paths (RedisProxy vs RedisConnection).
+     */
+    private function mockRedis(): void
     {
-        $this->redis = new RedisStore(m::mock(RedisFactory::class), 'prefix');
-        $this->redisProxy = m::mock(RedisProxy::class);
+        // Mock RedisConnection for all operations
+        $this->connection = m::mock(RedisConnection::class);
+        $this->connection->shouldReceive('release')->zeroOrMoreTimes();
+        $this->connection->shouldReceive('serialized')->andReturn(false)->byDefault();
 
-        $this->redis->getRedis()->shouldReceive('get')->with('default')->andReturn($this->redisProxy);
+        $pool = m::mock(RedisPool::class);
+        $pool->shouldReceive('get')->andReturn($this->connection);
+
+        $poolFactory = m::mock(PoolFactory::class);
+        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+
+        // RedisFactory is still needed for RedisStore but not used for operations anymore
+        $redisFactory = m::mock(RedisFactory::class);
+
+        $this->redis = new RedisStore($redisFactory, 'prefix', 'default', $poolFactory);
     }
 }

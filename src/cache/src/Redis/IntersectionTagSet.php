@@ -8,6 +8,8 @@ use Hyperf\Collection\LazyCollection;
 use Hypervel\Cache\Contracts\Store;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Cache\TagSet;
+use Hypervel\Redis\RedisConnection;
+use Redis;
 
 class IntersectionTagSet extends TagSet
 {
@@ -25,13 +27,16 @@ class IntersectionTagSet extends TagSet
     {
         $ttl = $ttl > 0 ? now()->addSeconds($ttl)->getTimestamp() : -1;
 
-        foreach ($this->tagIds() as $tagKey) {
-            if ($updateWhen) {
-                $this->store->connection()->zadd($this->store->getPrefix() . $tagKey, $updateWhen, $ttl, $key);
-            } else {
-                $this->store->connection()->zadd($this->store->getPrefix() . $tagKey, $ttl, $key);
+        $this->store->getContext()->withConnection(function (RedisConnection $conn) use ($key, $ttl, $updateWhen) {
+            foreach ($this->tagIds() as $tagKey) {
+                $prefixedKey = $this->store->getPrefix() . $tagKey;
+                if ($updateWhen) {
+                    $conn->zadd($prefixedKey, $updateWhen, $ttl, $key);
+                } else {
+                    $conn->zadd($prefixedKey, $ttl, $key);
+                }
             }
-        }
+        });
     }
 
     /**
@@ -39,39 +44,42 @@ class IntersectionTagSet extends TagSet
      */
     public function entries(): LazyCollection
     {
-        $connection = $this->store->connection();
+        $context = $this->store->getContext();
+        $prefix = $this->store->getPrefix();
 
         $defaultCursorValue = match (true) {
             version_compare(phpversion('redis'), '6.1.0', '>=') => null,
             default => '0',
         };
 
-        return new LazyCollection(function () use ($connection, $defaultCursorValue) {
+        return new LazyCollection(function () use ($context, $prefix, $defaultCursorValue) {
             foreach ($this->tagIds() as $tagKey) {
-                $cursor = $defaultCursorValue;
+                // Collect all entries for this tag within one connection hold
+                $tagEntries = $context->withConnection(function (RedisConnection $conn) use ($prefix, $tagKey, $defaultCursorValue) {
+                    $cursor = $defaultCursorValue;
+                    $allEntries = [];
 
-                do {
-                    $entries = $connection->zScan(
-                        $this->store->getPrefix() . $tagKey,
-                        $cursor,
-                        '*',
-                        1000
-                    );
+                    do {
+                        $entries = $conn->zScan(
+                            $prefix . $tagKey,
+                            $cursor,
+                            '*',
+                            1000
+                        );
 
-                    if (! is_array($entries)) {
-                        break;
-                    }
+                        if (! is_array($entries)) {
+                            break;
+                        }
 
-                    $entries = array_unique(array_keys($entries));
+                        $allEntries = array_merge($allEntries, array_keys($entries));
+                    } while (((string) $cursor) !== $defaultCursorValue);
 
-                    if (count($entries) === 0) {
-                        continue;
-                    }
+                    return array_unique($allEntries);
+                });
 
-                    foreach ($entries as $entry) {
-                        yield $entry;
-                    }
-                } while (((string) $cursor) !== $defaultCursorValue);
+                foreach ($tagEntries as $entry) {
+                    yield $entry;
+                }
             }
         });
     }
@@ -81,10 +89,18 @@ class IntersectionTagSet extends TagSet
      */
     public function flushStaleEntries(): void
     {
-        $this->store->connection()->pipeline(function ($pipe) {
+        $this->store->getContext()->withConnection(function (RedisConnection $conn) {
+            $pipeline = $conn->multi(Redis::PIPELINE);
+
             foreach ($this->tagIds() as $tagKey) {
-                $pipe->zremrangebyscore($this->store->getPrefix() . $tagKey, '0', (string) now()->getTimestamp());
+                $pipeline->zRemRangeByScore(
+                    $this->store->getPrefix() . $tagKey,
+                    '0',
+                    (string) now()->getTimestamp()
+                );
             }
+
+            $pipeline->exec();
         });
     }
 

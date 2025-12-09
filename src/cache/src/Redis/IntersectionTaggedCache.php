@@ -10,6 +10,7 @@ use Hypervel\Cache\Contracts\Store;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Cache\TaggedCache;
 use Hypervel\Cache\TagSet;
+use Hypervel\Redis\RedisConnection;
 
 class IntersectionTaggedCache extends TaggedCache
 {
@@ -112,7 +113,9 @@ class IntersectionTaggedCache extends TaggedCache
             ->chunk(1000);
 
         foreach ($entries as $cacheKeys) {
-            $this->store->connection()->del(...$cacheKeys);
+            $this->store->getContext()->withConnection(function (RedisConnection $conn) use ($cacheKeys) {
+                $conn->del(...$cacheKeys);
+            });
         }
     }
 
