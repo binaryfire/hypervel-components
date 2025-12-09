@@ -142,6 +142,72 @@ class RedisStoreTest extends TestCase
     /**
      * @test
      */
+    public function testDefaultTaggingModeIsIntersection(): void
+    {
+        $connection = $this->mockConnection();
+        $redis = $this->createStore($connection);
+
+        $this->assertSame('intersection', $redis->getTaggingMode());
+    }
+
+    /**
+     * @test
+     */
+    public function testSetTaggingModeReturnsStoreInstance(): void
+    {
+        $connection = $this->mockConnection();
+        $redis = $this->createStore($connection);
+
+        $result = $redis->setTaggingMode('union');
+
+        $this->assertSame($redis, $result);
+        $this->assertSame('union', $redis->getTaggingMode());
+    }
+
+    /**
+     * @test
+     */
+    public function testTagsReturnsUnionTaggedCacheWhenInUnionMode(): void
+    {
+        $connection = $this->mockConnection();
+        $redis = $this->createStore($connection);
+        $redis->setTaggingMode('union');
+
+        $tagged = $redis->tags(['users', 'posts']);
+
+        $this->assertInstanceOf(\Hypervel\Cache\Redis\UnionTaggedCache::class, $tagged);
+    }
+
+    /**
+     * @test
+     */
+    public function testTagsReturnsIntersectionTaggedCacheWhenInIntersectionMode(): void
+    {
+        $connection = $this->mockConnection();
+        $redis = $this->createStore($connection);
+        $redis->setTaggingMode('intersection');
+
+        $tagged = $redis->tags(['users', 'posts']);
+
+        $this->assertInstanceOf(\Hypervel\Cache\Redis\IntersectionTaggedCache::class, $tagged);
+    }
+
+    /**
+     * @test
+     */
+    public function testSetTaggingModeFallsBackToIntersectionForInvalidMode(): void
+    {
+        $connection = $this->mockConnection();
+        $redis = $this->createStore($connection);
+
+        $redis->setTaggingMode('invalid');
+
+        $this->assertSame('intersection', $redis->getTaggingMode());
+    }
+
+    /**
+     * @test
+     */
     public function testLockReturnsRedisLockInstance(): void
     {
         $connection = $this->mockConnection();

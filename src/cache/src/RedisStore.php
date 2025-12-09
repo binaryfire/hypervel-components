@@ -12,6 +12,8 @@ use Hyperf\Redis\RedisProxy;
 use Hypervel\Cache\Contracts\LockProvider;
 use Hypervel\Cache\Redis\IntersectionTaggedCache;
 use Hypervel\Cache\Redis\IntersectionTagSet;
+use Hypervel\Cache\Redis\UnionTaggedCache;
+use Hypervel\Cache\Redis\UnionTagSet;
 use Hypervel\Cache\Redis\Operations\Add;
 use Hypervel\Cache\Redis\Operations\Decrement;
 use Hypervel\Cache\Redis\Operations\Flush;
@@ -61,6 +63,11 @@ class RedisStore extends TaggableStore implements LockProvider
      * The name of the connection that should be used for locks.
      */
     protected string $lockConnection;
+
+    /**
+     * The tagging mode ('intersection' or 'union').
+     */
+    protected string $taggingMode = 'intersection';
 
     /**
      * Cached StoreContext instance.
@@ -389,12 +396,43 @@ class RedisStore extends TaggableStore implements LockProvider
     /**
      * Begin executing a new tags operation.
      */
-    public function tags(mixed $names): IntersectionTaggedCache
+    public function tags(mixed $names): IntersectionTaggedCache|UnionTaggedCache
     {
+        $names = is_array($names) ? $names : func_get_args();
+
+        if ($this->taggingMode === 'union') {
+            return new UnionTaggedCache(
+                $this,
+                new UnionTagSet($this, $names)
+            );
+        }
+
         return new IntersectionTaggedCache(
             $this,
-            new IntersectionTagSet($this, is_array($names) ? $names : func_get_args())
+            new IntersectionTagSet($this, $names)
         );
+    }
+
+    /**
+     * Set the tagging mode.
+     *
+     * @param string $mode Either 'intersection' or 'union'
+     */
+    public function setTaggingMode(string $mode): static
+    {
+        $this->taggingMode = in_array($mode, ['intersection', 'union'], true)
+            ? $mode
+            : 'intersection';
+
+        return $this;
+    }
+
+    /**
+     * Get the tagging mode.
+     */
+    public function getTaggingMode(): string
+    {
+        return $this->taggingMode;
     }
 
     /**
