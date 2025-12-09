@@ -347,7 +347,7 @@ class CacheManagerTest extends TestCase
                     'redis' => [
                         'driver' => 'redis',
                         'connection' => 'default',
-                        'tagging' => 'union',
+                        'tagging_mode' => 'union',
                     ],
                 ],
             ],
@@ -372,7 +372,7 @@ class CacheManagerTest extends TestCase
                     'redis' => [
                         'driver' => 'redis',
                         'connection' => 'default',
-                        'tagging' => 'invalid',
+                        'tagging_mode' => 'invalid',
                     ],
                 ],
             ],

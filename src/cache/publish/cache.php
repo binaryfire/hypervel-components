@@ -50,7 +50,7 @@ return [
             'driver' => 'redis',
             'connection' => env('CACHE_REDIS_CONNECTION', 'default'),
             'lock_connection' => env('CACHE_REDIS_LOCK_CONNECTION', 'default'),
-            'tagging' => env('CACHE_REDIS_TAGGING', 'intersection'),
+            'tagging_mode' => env('CACHE_REDIS_TAGGING_MODE', 'intersection'),
         ],
 
         'swoole' => [
