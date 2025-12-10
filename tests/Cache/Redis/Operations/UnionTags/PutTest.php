@@ -54,7 +54,7 @@ class PutTest extends TestCase
 
         // Mock smembers for old tags lookup (Lua script uses this internally but we mock the full execution)
         $redis = $this->createStore($connection);
-        $result = $redis->putWithTags('foo', 'bar', 60, ['users', 'posts']);
+        $result = $redis->unionTagOps()->put()->execute('foo', 'bar', 60, ['users', 'posts']);
         $this->assertTrue($result);
     }
 
@@ -108,7 +108,7 @@ class PutTest extends TestCase
             $poolFactory
         );
 
-        $result = $redis->putWithTags('foo', 'bar', 60, ['users', 'posts']);
+        $result = $redis->unionTagOps()->put()->execute('foo', 'bar', 60, ['users', 'posts']);
         $this->assertTrue($result);
     }
 
@@ -128,7 +128,7 @@ class PutTest extends TestCase
             ->andReturn(true);
 
         $redis = $this->createStore($connection);
-        $result = $redis->putWithTags('foo', 'bar', 60, []);
+        $result = $redis->unionTagOps()->put()->execute('foo', 'bar', 60, []);
         $this->assertTrue($result);
     }
 
@@ -153,7 +153,7 @@ class PutTest extends TestCase
             ->andReturn(true);
 
         $redis = $this->createStore($connection);
-        $result = $redis->putWithTags('foo', 42, 60, ['numbers']);
+        $result = $redis->unionTagOps()->put()->execute('foo', 42, 60, ['numbers']);
         $this->assertTrue($result);
     }
 }

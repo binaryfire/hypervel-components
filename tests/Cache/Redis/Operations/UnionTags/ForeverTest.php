@@ -42,7 +42,7 @@ class ForeverTest extends TestCase
             ->andReturn(true);
 
         $redis = $this->createStore($connection);
-        $result = $redis->foreverWithTags('foo', 'bar', ['users']);
+        $result = $redis->unionTagOps()->forever()->execute('foo', 'bar', ['users']);
         $this->assertTrue($result);
     }
 }

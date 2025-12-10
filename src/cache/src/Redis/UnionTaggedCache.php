@@ -136,7 +136,7 @@ class UnionTaggedCache extends TaggedCache
             return false;
         }
 
-        $result = $this->store->putWithTags($key, $value, $seconds, $this->unionTags->getNames());
+        $result = $this->store->unionTagOps()->put()->execute($key, $value, $seconds, $this->unionTags->getNames());
 
         if ($result) {
             $this->event(new KeyWritten($key, $value, $seconds));
@@ -160,7 +160,7 @@ class UnionTaggedCache extends TaggedCache
             return false;
         }
 
-        $result = $this->store->putManyWithTags($values, $seconds, $this->unionTags->getNames());
+        $result = $this->store->unionTagOps()->putMany()->execute($values, $seconds, $this->unionTags->getNames());
 
         if ($result) {
             foreach ($values as $key => $value) {
@@ -187,7 +187,7 @@ class UnionTaggedCache extends TaggedCache
             }
         }
 
-        return $this->store->addWithTags($key, $value, $seconds, $this->unionTags->getNames());
+        return $this->store->unionTagOps()->add()->execute($key, $value, $seconds, $this->unionTags->getNames());
     }
 
     /**
@@ -195,7 +195,7 @@ class UnionTaggedCache extends TaggedCache
      */
     public function forever(string $key, mixed $value): bool
     {
-        $result = $this->store->foreverWithTags($key, $value, $this->unionTags->getNames());
+        $result = $this->store->unionTagOps()->forever()->execute($key, $value, $this->unionTags->getNames());
 
         if ($result) {
             $this->event(new KeyWritten($key, $value));
@@ -209,7 +209,7 @@ class UnionTaggedCache extends TaggedCache
      */
     public function increment(string $key, int $value = 1): bool|int
     {
-        return $this->store->incrementWithTags($key, $value, $this->unionTags->getNames());
+        return $this->store->unionTagOps()->increment()->execute($key, $value, $this->unionTags->getNames());
     }
 
     /**
@@ -217,7 +217,7 @@ class UnionTaggedCache extends TaggedCache
      */
     public function decrement(string $key, int $value = 1): bool|int
     {
-        return $this->store->decrementWithTags($key, $value, $this->unionTags->getNames());
+        return $this->store->unionTagOps()->decrement()->execute($key, $value, $this->unionTags->getNames());
     }
 
     /**
@@ -239,7 +239,7 @@ class UnionTaggedCache extends TaggedCache
      */
     public function items(): Generator
     {
-        return $this->store->tagItems($this->unionTags->getNames());
+        return $this->store->unionTagOps()->getTagItems()->execute($this->unionTags->getNames());
     }
 
     /**

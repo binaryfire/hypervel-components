@@ -42,7 +42,7 @@ class AddTest extends TestCase
             ->andReturn(true);
 
         $redis = $this->createStore($connection);
-        $result = $redis->addWithTags('foo', 'bar', 60, ['users']);
+        $result = $redis->unionTagOps()->add()->execute('foo', 'bar', 60, ['users']);
         $this->assertTrue($result);
     }
 
@@ -63,7 +63,7 @@ class AddTest extends TestCase
             ->andReturn(false); // Key exists
 
         $redis = $this->createStore($connection);
-        $result = $redis->addWithTags('foo', 'bar', 60, ['users']);
+        $result = $redis->unionTagOps()->add()->execute('foo', 'bar', 60, ['users']);
         $this->assertFalse($result);
     }
 }

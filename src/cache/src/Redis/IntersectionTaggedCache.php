@@ -40,18 +40,21 @@ class IntersectionTaggedCache extends TaggedCache
                 return false;
             }
 
-            $this->tags->addEntry($this->itemKey($key), $seconds);
-
-            // RedisStore has atomic add() method
-            return $this->store->add($this->itemKey($key), $value, $seconds);
+            return $this->store->intersectionTagOps()->add()->execute(
+                $this->itemKey($key),
+                $value,
+                $seconds,
+                $this->tags->tagIds()
+            );
         }
 
         // Null TTL: non-atomic get + forever (matches Repository::add behavior)
-        $this->tags->addEntry($this->itemKey($key), 0);
-
         if (is_null($this->get($key))) {
-            // Call store->forever directly to avoid double tag entry via $this->forever()
-            $result = $this->store->forever($this->itemKey($key), $value);
+            $result = $this->store->intersectionTagOps()->forever()->execute(
+                $this->itemKey($key),
+                $value,
+                $this->tags->tagIds()
+            );
 
             if ($result) {
                 $this->event(new KeyWritten($key, $value));
@@ -82,12 +85,46 @@ class IntersectionTaggedCache extends TaggedCache
             return $this->forget($key);
         }
 
-        $this->tags->addEntry($this->itemKey($key), $seconds);
-
-        $result = $this->store->put($this->itemKey($key), $value, $seconds);
+        $result = $this->store->intersectionTagOps()->put()->execute(
+            $this->itemKey($key),
+            $value,
+            $seconds,
+            $this->tags->tagIds()
+        );
 
         if ($result) {
             $this->event(new KeyWritten($key, $value, $seconds));
+        }
+
+        return $result;
+    }
+
+    /**
+     * Store multiple items in the cache for a given number of seconds.
+     */
+    public function putMany(array $values, null|DateInterval|DateTimeInterface|int $ttl = null): bool
+    {
+        if ($ttl === null) {
+            return $this->putManyForever($values);
+        }
+
+        $seconds = $this->getSeconds($ttl);
+
+        if ($seconds <= 0) {
+            return false;
+        }
+
+        $result = $this->store->intersectionTagOps()->putMany()->execute(
+            $values,
+            $seconds,
+            $this->tags->tagIds(),
+            sha1($this->tags->getNamespace()) . ':'
+        );
+
+        if ($result) {
+            foreach ($values as $key => $value) {
+                $this->event(new KeyWritten($key, $value, $seconds));
+            }
         }
 
         return $result;
@@ -98,9 +135,11 @@ class IntersectionTaggedCache extends TaggedCache
      */
     public function increment(string $key, int $value = 1): bool|int
     {
-        $this->tags->addEntry($this->itemKey($key), updateWhen: 'NX');
-
-        return $this->store->increment($this->itemKey($key), $value);
+        return $this->store->intersectionTagOps()->increment()->execute(
+            $this->itemKey($key),
+            $value,
+            $this->tags->tagIds()
+        );
     }
 
     /**
@@ -108,9 +147,11 @@ class IntersectionTaggedCache extends TaggedCache
      */
     public function decrement(string $key, int $value = 1): bool|int
     {
-        $this->tags->addEntry($this->itemKey($key), updateWhen: 'NX');
-
-        return $this->store->decrement($this->itemKey($key), $value);
+        return $this->store->intersectionTagOps()->decrement()->execute(
+            $this->itemKey($key),
+            $value,
+            $this->tags->tagIds()
+        );
     }
 
     /**
@@ -118,9 +159,11 @@ class IntersectionTaggedCache extends TaggedCache
      */
     public function forever(string $key, mixed $value): bool
     {
-        $this->tags->addEntry($this->itemKey($key));
-
-        $result = $this->store->forever($this->itemKey($key), $value);
+        $result = $this->store->intersectionTagOps()->forever()->execute(
+            $this->itemKey($key),
+            $value,
+            $this->tags->tagIds()
+        );
 
         if ($result) {
             $this->event(new KeyWritten($key, $value));
@@ -134,7 +177,7 @@ class IntersectionTaggedCache extends TaggedCache
      */
     public function flush(): bool
     {
-        $this->store->flushIntersectionTags($this->tags->tagIds(), $this->tags->getNames());
+        $this->store->intersectionTagOps()->flush()->execute($this->tags->tagIds(), $this->tags->getNames());
 
         return true;
     }
@@ -147,5 +190,21 @@ class IntersectionTaggedCache extends TaggedCache
         $this->tags->flushStaleEntries();
 
         return true;
+    }
+
+    /**
+     * Store multiple items in the cache indefinitely.
+     */
+    protected function putManyForever(array $values): bool
+    {
+        $result = true;
+
+        foreach ($values as $key => $value) {
+            if (! $this->forever($key, $value)) {
+                $result = false;
+            }
+        }
+
+        return $result;
     }
 }

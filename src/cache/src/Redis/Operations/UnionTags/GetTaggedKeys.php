@@ -6,7 +6,7 @@ namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
 use Exception;
 use Generator;
-use Hypervel\Cache\Redis\Support\CommandErrorHandler;
+use Hypervel\Cache\Redis\Support\TaggedOperationErrorHandler;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
@@ -60,7 +60,7 @@ class GetTaggedKeys
                 return $this->hscanGenerator($client, $tagKey, $count);
             });
         } catch (Exception $e) {
-            CommandErrorHandler::handle($e);
+            TaggedOperationErrorHandler::handle($e);
 
             return $this->arrayToGenerator([]);
         }

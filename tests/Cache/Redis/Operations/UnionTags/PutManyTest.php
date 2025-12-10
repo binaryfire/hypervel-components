@@ -46,7 +46,7 @@ class PutManyTest extends TestCase
         $client->shouldReceive('zadd')->andReturn($client);
 
         $redis = $this->createStore($connection);
-        $result = $redis->putManyWithTags([
+        $result = $redis->unionTagOps()->putMany()->execute([
             'foo' => 'bar',
             'baz' => 'qux',
         ], 60, ['users']);

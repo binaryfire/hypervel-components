@@ -42,7 +42,7 @@ class GetTagItemsTest extends TestCase
             ->andReturn([serialize('value1'), serialize('value2')]);
 
         $redis = $this->createStore($connection);
-        $items = iterator_to_array($redis->tagItems(['users']));
+        $items = iterator_to_array($redis->unionTagOps()->getTagItems()->execute(['users']));
 
         $this->assertSame(['foo' => 'value1', 'bar' => 'value2'], $items);
     }
@@ -71,7 +71,7 @@ class GetTagItemsTest extends TestCase
             ->andReturn([serialize('value1'), null, serialize('value3')]);
 
         $redis = $this->createStore($connection);
-        $items = iterator_to_array($redis->tagItems(['users']));
+        $items = iterator_to_array($redis->unionTagOps()->getTagItems()->execute(['users']));
 
         $this->assertSame(['foo' => 'value1', 'baz' => 'value3'], $items);
     }
@@ -115,7 +115,7 @@ class GetTagItemsTest extends TestCase
             ->andReturn([serialize('v3')]);
 
         $redis = $this->createStore($connection);
-        $items = iterator_to_array($redis->tagItems(['users', 'posts']));
+        $items = iterator_to_array($redis->unionTagOps()->getTagItems()->execute(['users', 'posts']));
 
         // bar should only appear once
         $this->assertCount(3, $items);

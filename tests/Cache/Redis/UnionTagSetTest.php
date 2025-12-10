@@ -5,28 +5,31 @@ declare(strict_types=1);
 namespace Hypervel\Tests\Cache\Redis;
 
 use Generator;
-use Hyperf\Redis\Pool\PoolFactory;
-use Hyperf\Redis\Pool\RedisPool;
-use Hyperf\Redis\RedisFactory;
-use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Cache\Redis\UnionTagSet;
 use Hypervel\Cache\RedisStore;
-use Hypervel\Redis\RedisConnection;
+use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
-use Mockery\MockInterface;
+use Redis;
 
 /**
+ * Tests for UnionTagSet class.
+ *
+ * Uses MocksRedisConnections to mock at the Redis client level,
+ * allowing the full operation chain to execute.
+ *
  * @internal
  * @coversNothing
  */
 class UnionTagSetTest extends TestCase
 {
-    private MockInterface|RedisStore $store;
+    use MocksRedisConnections;
 
-    private MockInterface|StoreContext $context;
+    private RedisStore $store;
 
-    private MockInterface|RedisConnection $connection;
+    private m\MockInterface $client;
+
+    private m\MockInterface $pipeline;
 
     /**
      * Set up test fixtures.
@@ -35,7 +38,7 @@ class UnionTagSetTest extends TestCase
     {
         parent::setUp();
 
-        $this->mockStore();
+        $this->setupStore();
     }
 
     /**
@@ -83,14 +86,9 @@ class UnionTagSetTest extends TestCase
     /**
      * @test
      */
-    public function testTagHashKeyDelegatesToContext(): void
+    public function testTagHashKeyReturnsCorrectFormat(): void
     {
         $tagSet = new UnionTagSet($this->store, ['users']);
-
-        $this->context->shouldReceive('tagHashKey')
-            ->once()
-            ->with('users')
-            ->andReturn('prefix:_erc:tag:users:entries');
 
         $result = $tagSet->tagHashKey('users');
 
@@ -104,10 +102,16 @@ class UnionTagSetTest extends TestCase
     {
         $tagSet = new UnionTagSet($this->store, ['users']);
 
-        $this->store->shouldReceive('getTaggedKeys')
+        // GetTaggedKeys checks HLEN then uses HKEYS for small hashes
+        $this->client->shouldReceive('hlen')
             ->once()
-            ->with('users')
-            ->andReturn($this->createGenerator(['key1', 'key2', 'key3']));
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn(3);
+
+        $this->client->shouldReceive('hkeys')
+            ->once()
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn(['key1', 'key2', 'key3']);
 
         $entries = $tagSet->entries();
 
@@ -122,16 +126,25 @@ class UnionTagSetTest extends TestCase
     {
         $tagSet = new UnionTagSet($this->store, ['users', 'posts']);
 
-        // 'key2' appears in both tags
-        $this->store->shouldReceive('getTaggedKeys')
+        // First tag 'users' has keys key1, key2
+        $this->client->shouldReceive('hlen')
             ->once()
-            ->with('users')
-            ->andReturn($this->createGenerator(['key1', 'key2']));
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn(2);
+        $this->client->shouldReceive('hkeys')
+            ->once()
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn(['key1', 'key2']);
 
-        $this->store->shouldReceive('getTaggedKeys')
+        // Second tag 'posts' has keys key2, key3 (key2 is duplicate)
+        $this->client->shouldReceive('hlen')
             ->once()
-            ->with('posts')
-            ->andReturn($this->createGenerator(['key2', 'key3']));
+            ->with('prefix:_erc:tag:posts:entries')
+            ->andReturn(2);
+        $this->client->shouldReceive('hkeys')
+            ->once()
+            ->with('prefix:_erc:tag:posts:entries')
+            ->andReturn(['key2', 'key3']);
 
         $entries = $tagSet->entries();
 
@@ -148,10 +161,14 @@ class UnionTagSetTest extends TestCase
     {
         $tagSet = new UnionTagSet($this->store, ['users']);
 
-        $this->store->shouldReceive('getTaggedKeys')
+        $this->client->shouldReceive('hlen')
             ->once()
-            ->with('users')
-            ->andReturn($this->createGenerator([]));
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn(0);
+        $this->client->shouldReceive('hkeys')
+            ->once()
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn([]);
 
         $entries = $tagSet->entries();
 
@@ -173,46 +190,56 @@ class UnionTagSetTest extends TestCase
     /**
      * @test
      */
-    public function testResetCallsFlush(): void
+    public function testFlushDeletesKeysAndTagHashes(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users', 'posts']);
+        $tagSet = new UnionTagSet($this->store, ['users']);
 
-        $this->store->shouldReceive('flushTags')
+        // GetTaggedKeys for the flush operation
+        $this->client->shouldReceive('hlen')
             ->once()
-            ->with(['users', 'posts']);
-
-        $tagSet->reset();
-    }
-
-    /**
-     * @test
-     */
-    public function testFlushDelegatesToStoreFlushTags(): void
-    {
-        $tagSet = new UnionTagSet($this->store, ['users', 'posts']);
-
-        $this->store->shouldReceive('flushTags')
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn(2);
+        $this->client->shouldReceive('hkeys')
             ->once()
-            ->with(['users', 'posts']);
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn(['key1', 'key2']);
+
+        // Pipeline for deleting cache keys, reverse indexes, tag hashes, registry entries
+        $this->client->shouldReceive('pipeline')->andReturn($this->pipeline);
+        $this->pipeline->shouldReceive('del')->andReturnSelf();
+        $this->pipeline->shouldReceive('unlink')->andReturnSelf();
+        $this->pipeline->shouldReceive('zrem')->andReturnSelf();
+        $this->pipeline->shouldReceive('exec')->andReturn([]);
 
         $tagSet->flush();
+
+        // If we get here without exception, the flush executed through the full chain
+        $this->assertTrue(true);
     }
 
     /**
      * @test
      */
-    public function testFlushTagDelegatesToStoreFlushTagsWithSingleTag(): void
+    public function testFlushTagDeletesSingleTag(): void
     {
         $tagSet = new UnionTagSet($this->store, ['users', 'posts']);
 
-        $this->context->shouldReceive('tagHashKey')
+        // GetTaggedKeys for the flush operation (only 'users' tag)
+        $this->client->shouldReceive('hlen')
             ->once()
-            ->with('users')
-            ->andReturn('prefix:_erc:tag:users:entries');
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn(1);
+        $this->client->shouldReceive('hkeys')
+            ->once()
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn(['key1']);
 
-        $this->store->shouldReceive('flushTags')
-            ->once()
-            ->with(['users']);
+        // Pipeline for flush operations
+        $this->client->shouldReceive('pipeline')->andReturn($this->pipeline);
+        $this->pipeline->shouldReceive('del')->andReturnSelf();
+        $this->pipeline->shouldReceive('unlink')->andReturnSelf();
+        $this->pipeline->shouldReceive('zrem')->andReturnSelf();
+        $this->pipeline->shouldReceive('exec')->andReturn([]);
 
         $result = $tagSet->flushTag('users');
 
@@ -237,14 +264,22 @@ class UnionTagSetTest extends TestCase
     {
         $tagSet = new UnionTagSet($this->store, ['users']);
 
-        $this->context->shouldReceive('tagHashKey')
+        // GetTaggedKeys for the flush operation
+        $this->client->shouldReceive('hlen')
             ->once()
-            ->with('users')
-            ->andReturn('prefix:_erc:tag:users:entries');
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn(1);
+        $this->client->shouldReceive('hkeys')
+            ->once()
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn(['key1']);
 
-        $this->store->shouldReceive('flushTags')
-            ->once()
-            ->with(['users']);
+        // Pipeline for flush operations
+        $this->client->shouldReceive('pipeline')->andReturn($this->pipeline);
+        $this->pipeline->shouldReceive('del')->andReturnSelf();
+        $this->pipeline->shouldReceive('unlink')->andReturnSelf();
+        $this->pipeline->shouldReceive('zrem')->andReturnSelf();
+        $this->pipeline->shouldReceive('exec')->andReturn([]);
 
         $result = $tagSet->resetTag('users');
 
@@ -259,46 +294,64 @@ class UnionTagSetTest extends TestCase
     {
         $tagSet = new UnionTagSet($this->store, ['users']);
 
-        $this->context->shouldReceive('tagHashKey')
-            ->once()
-            ->with('users')
-            ->andReturn('prefix:_erc:tag:users:entries');
-
         $result = $tagSet->tagKey('users');
 
         $this->assertSame('prefix:_erc:tag:users:entries', $result);
     }
 
     /**
-     * Create a generator from an array for testing.
+     * @test
      */
-    private function createGenerator(array $items): Generator
+    public function testResetCallsFlush(): void
     {
-        foreach ($items as $item) {
-            yield $item;
-        }
+        $tagSet = new UnionTagSet($this->store, ['users', 'posts']);
+
+        // GetTaggedKeys for both tags
+        $this->client->shouldReceive('hlen')
+            ->once()
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn(1);
+        $this->client->shouldReceive('hkeys')
+            ->once()
+            ->with('prefix:_erc:tag:users:entries')
+            ->andReturn(['key1']);
+
+        $this->client->shouldReceive('hlen')
+            ->once()
+            ->with('prefix:_erc:tag:posts:entries')
+            ->andReturn(1);
+        $this->client->shouldReceive('hkeys')
+            ->once()
+            ->with('prefix:_erc:tag:posts:entries')
+            ->andReturn(['key2']);
+
+        // Pipeline for flush operations
+        $this->client->shouldReceive('pipeline')->andReturn($this->pipeline);
+        $this->pipeline->shouldReceive('del')->andReturnSelf();
+        $this->pipeline->shouldReceive('unlink')->andReturnSelf();
+        $this->pipeline->shouldReceive('zrem')->andReturnSelf();
+        $this->pipeline->shouldReceive('exec')->andReturn([]);
+
+        $tagSet->reset();
+
+        // If we get here without exception, reset executed flush correctly
+        $this->assertTrue(true);
     }
 
     /**
-     * Set up the store mock.
+     * Set up the store with mocked Redis connection.
      */
-    private function mockStore(): void
+    private function setupStore(): void
     {
-        $this->connection = m::mock(RedisConnection::class);
-        $this->connection->shouldReceive('release')->zeroOrMoreTimes();
-        $this->connection->shouldReceive('serialized')->andReturn(false)->byDefault();
+        $connection = $this->mockConnection();
+        $this->client = $connection->_mockClient;
 
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($this->connection);
+        // Mock pipeline
+        $this->pipeline = m::mock();
 
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        // Add pipeline support to client
+        $this->client->shouldReceive('pipeline')->andReturn($this->pipeline)->byDefault();
 
-        $this->context = m::mock(StoreContext::class);
-
-        // Create a partial mock of RedisStore to allow stubbing methods that don't exist yet
-        $this->store = m::mock(RedisStore::class)->makePartial();
-        $this->store->shouldReceive('getContext')->andReturn($this->context);
-        $this->store->shouldReceive('getPrefix')->andReturn('prefix:');
+        $this->store = $this->createStore($connection);
     }
 }

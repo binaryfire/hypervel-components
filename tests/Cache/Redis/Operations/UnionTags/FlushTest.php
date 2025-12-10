@@ -370,7 +370,7 @@ class FlushTest extends TestCase
         $client->shouldReceive('exec')->andReturn([]);
 
         $store = $this->createStore($connection);
-        $result = $store->flushTags(['users']);
+        $result = $store->unionTagOps()->flush()->execute(['users']);
         $this->assertTrue($result);
     }
 

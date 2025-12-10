@@ -1,0 +1,157 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Hypervel\Cache\Redis\Operations;
+
+use Hypervel\Cache\Redis\Operations\IntersectionTags\Add;
+use Hypervel\Cache\Redis\Operations\IntersectionTags\AddEntry;
+use Hypervel\Cache\Redis\Operations\IntersectionTags\Decrement;
+use Hypervel\Cache\Redis\Operations\IntersectionTags\Flush;
+use Hypervel\Cache\Redis\Operations\IntersectionTags\FlushStaleEntries;
+use Hypervel\Cache\Redis\Operations\IntersectionTags\Forever;
+use Hypervel\Cache\Redis\Operations\IntersectionTags\GetEntries;
+use Hypervel\Cache\Redis\Operations\IntersectionTags\Increment;
+use Hypervel\Cache\Redis\Operations\IntersectionTags\Put;
+use Hypervel\Cache\Redis\Operations\IntersectionTags\PutMany;
+use Hypervel\Cache\Redis\Support\Serialization;
+use Hypervel\Cache\Redis\Support\StoreContext;
+
+/**
+ * Container for intersection tag operations.
+ *
+ * This class groups all Redis operations related to intersection-based tagging,
+ * providing lazy-loaded, singleton-cached operation instances.
+ *
+ * Used by IntersectionTaggedCache and IntersectionTagSet.
+ */
+class IntersectionTagOperations
+{
+    // Combined cache + tag operations
+    private ?Put $put = null;
+
+    private ?PutMany $putMany = null;
+
+    private ?Add $add = null;
+
+    private ?Forever $forever = null;
+
+    private ?Increment $increment = null;
+
+    private ?Decrement $decrement = null;
+
+    // Tag management operations
+    private ?AddEntry $addEntry = null;
+
+    private ?GetEntries $getEntries = null;
+
+    private ?FlushStaleEntries $flushStaleEntries = null;
+
+    private ?Flush $flush = null;
+
+    public function __construct(
+        private readonly StoreContext $context,
+        private readonly Serialization $serialization,
+    ) {}
+
+    /**
+     * Get the Put operation for storing items with tag tracking.
+     */
+    public function put(): Put
+    {
+        return $this->put ??= new Put($this->context, $this->serialization);
+    }
+
+    /**
+     * Get the PutMany operation for storing multiple items with tag tracking.
+     */
+    public function putMany(): PutMany
+    {
+        return $this->putMany ??= new PutMany($this->context, $this->serialization);
+    }
+
+    /**
+     * Get the Add operation for storing items if they don't exist.
+     */
+    public function add(): Add
+    {
+        return $this->add ??= new Add($this->context, $this->serialization);
+    }
+
+    /**
+     * Get the Forever operation for storing items indefinitely with tag tracking.
+     */
+    public function forever(): Forever
+    {
+        return $this->forever ??= new Forever($this->context, $this->serialization);
+    }
+
+    /**
+     * Get the Increment operation for incrementing values with tag tracking.
+     */
+    public function increment(): Increment
+    {
+        return $this->increment ??= new Increment($this->context);
+    }
+
+    /**
+     * Get the Decrement operation for decrementing values with tag tracking.
+     */
+    public function decrement(): Decrement
+    {
+        return $this->decrement ??= new Decrement($this->context);
+    }
+
+    /**
+     * Get the AddEntry operation for adding cache key references to tag sorted sets.
+     *
+     * @deprecated Use put(), forever(), increment(), decrement() instead for combined operations
+     */
+    public function addEntry(): AddEntry
+    {
+        return $this->addEntry ??= new AddEntry($this->context);
+    }
+
+    /**
+     * Get the GetEntries operation for retrieving cache keys from tag sorted sets.
+     */
+    public function getEntries(): GetEntries
+    {
+        return $this->getEntries ??= new GetEntries($this->context);
+    }
+
+    /**
+     * Get the FlushStaleEntries operation for removing expired entries from tag sorted sets.
+     */
+    public function flushStaleEntries(): FlushStaleEntries
+    {
+        return $this->flushStaleEntries ??= new FlushStaleEntries($this->context);
+    }
+
+    /**
+     * Get the Flush operation for removing all items with specified tags.
+     */
+    public function flush(): Flush
+    {
+        return $this->flush ??= new Flush($this->context, $this->getEntries());
+    }
+
+    /**
+     * Clear all cached operation instances.
+     *
+     * Called when the store's connection or prefix changes.
+     */
+    public function clear(): void
+    {
+        $this->put = null;
+        $this->putMany = null;
+        $this->add = null;
+        $this->forever = null;
+        $this->increment = null;
+        $this->decrement = null;
+        $this->addEntry = null;
+        $this->getEntries = null;
+        $this->flushStaleEntries = null;
+        $this->flush = null;
+    }
+}

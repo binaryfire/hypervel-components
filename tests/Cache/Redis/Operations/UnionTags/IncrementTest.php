@@ -41,7 +41,7 @@ class IncrementTest extends TestCase
             ->andReturn(15); // New value after increment
 
         $redis = $this->createStore($connection);
-        $result = $redis->incrementWithTags('counter', 5, ['stats']);
+        $result = $redis->unionTagOps()->increment()->execute('counter', 5, ['stats']);
         $this->assertSame(15, $result);
     }
 }

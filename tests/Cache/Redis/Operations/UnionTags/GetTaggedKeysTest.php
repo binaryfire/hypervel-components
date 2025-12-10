@@ -36,7 +36,7 @@ class GetTaggedKeysTest extends TestCase
             ->andReturn(['key1', 'key2', 'key3']);
 
         $redis = $this->createStore($connection);
-        $keys = iterator_to_array($redis->getTaggedKeys('users'));
+        $keys = iterator_to_array($redis->unionTagOps()->getTaggedKeys()->execute('users'));
 
         $this->assertSame(['key1', 'key2', 'key3'], $keys);
     }
@@ -65,7 +65,7 @@ class GetTaggedKeysTest extends TestCase
             ->andReturn(['key1' => '1', 'key2' => '1', 'key3' => '1']);
 
         $redis = $this->createStore($connection);
-        $keys = iterator_to_array($redis->getTaggedKeys('users'));
+        $keys = iterator_to_array($redis->unionTagOps()->getTaggedKeys()->execute('users'));
 
         $this->assertSame(['key1', 'key2', 'key3'], $keys);
     }
@@ -88,7 +88,7 @@ class GetTaggedKeysTest extends TestCase
             ->andReturn([]);
 
         $redis = $this->createStore($connection);
-        $keys = iterator_to_array($redis->getTaggedKeys('nonexistent'));
+        $keys = iterator_to_array($redis->unionTagOps()->getTaggedKeys()->execute('nonexistent'));
 
         $this->assertSame([], $keys);
     }

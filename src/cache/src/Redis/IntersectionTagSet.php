@@ -23,7 +23,7 @@ class IntersectionTagSet extends TagSet
      */
     public function addEntry(string $key, int $ttl = 0, ?string $updateWhen = null): void
     {
-        $this->store->addIntersectionEntry($key, $ttl, $this->tagIds(), $updateWhen);
+        $this->store->intersectionTagOps()->addEntry()->execute($key, $ttl, $this->tagIds(), $updateWhen);
     }
 
     /**
@@ -31,7 +31,7 @@ class IntersectionTagSet extends TagSet
      */
     public function entries(): LazyCollection
     {
-        return $this->store->getIntersectionEntries($this->tagIds());
+        return $this->store->intersectionTagOps()->getEntries()->execute($this->tagIds());
     }
 
     /**
@@ -39,7 +39,7 @@ class IntersectionTagSet extends TagSet
      */
     public function flushStaleEntries(): void
     {
-        $this->store->flushStaleIntersectionEntries($this->tagIds());
+        $this->store->intersectionTagOps()->flushStaleEntries()->execute($this->tagIds());
     }
 
     /**

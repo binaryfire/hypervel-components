@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache;
 
-use Generator;
-use Hyperf\Collection\LazyCollection;
 use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\RedisFactory;
 use Hyperf\Redis\RedisProxy;
@@ -21,22 +19,11 @@ use Hypervel\Cache\Redis\Operations\Forget;
 use Hypervel\Cache\Redis\Operations\Forever;
 use Hypervel\Cache\Redis\Operations\Get;
 use Hypervel\Cache\Redis\Operations\Increment;
+use Hypervel\Cache\Redis\Operations\IntersectionTagOperations;
 use Hypervel\Cache\Redis\Operations\Many;
 use Hypervel\Cache\Redis\Operations\Put;
 use Hypervel\Cache\Redis\Operations\PutMany;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\AddEntry as IntersectionAddEntry;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\GetEntries as IntersectionGetEntries;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\Flush as IntersectionFlush;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\FlushStaleEntries as IntersectionFlushStaleEntries;
-use Hypervel\Cache\Redis\Operations\UnionTags\Add as UnionAdd;
-use Hypervel\Cache\Redis\Operations\UnionTags\Decrement as UnionDecrement;
-use Hypervel\Cache\Redis\Operations\UnionTags\Flush as UnionFlush;
-use Hypervel\Cache\Redis\Operations\UnionTags\Forever as UnionForever;
-use Hypervel\Cache\Redis\Operations\UnionTags\GetTaggedKeys;
-use Hypervel\Cache\Redis\Operations\UnionTags\GetTagItems;
-use Hypervel\Cache\Redis\Operations\UnionTags\Increment as UnionIncrement;
-use Hypervel\Cache\Redis\Operations\UnionTags\Put as UnionPut;
-use Hypervel\Cache\Redis\Operations\UnionTags\PutMany as UnionPutMany;
+use Hypervel\Cache\Redis\Operations\UnionTagOperations;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 
@@ -80,7 +67,7 @@ class RedisStore extends TaggableStore implements LockProvider
     private ?Serialization $serialization = null;
 
     /**
-     * Cached operation instances.
+     * Cached shared operation instances.
      */
     private ?Get $getOperation = null;
 
@@ -103,36 +90,11 @@ class RedisStore extends TaggableStore implements LockProvider
     private ?Flush $flushOperation = null;
 
     /**
-     * Cached union tagged operation instances.
+     * Cached tag operation containers.
      */
-    private ?UnionPut $unionPutOperation = null;
+    private ?UnionTagOperations $unionTagOperations = null;
 
-    private ?UnionAdd $unionAddOperation = null;
-
-    private ?UnionForever $unionForeverOperation = null;
-
-    private ?UnionIncrement $unionIncrementOperation = null;
-
-    private ?UnionDecrement $unionDecrementOperation = null;
-
-    private ?UnionPutMany $unionPutManyOperation = null;
-
-    private ?GetTaggedKeys $getTaggedKeysOperation = null;
-
-    private ?GetTagItems $getTagItemsOperation = null;
-
-    private ?UnionFlush $unionFlushOperation = null;
-
-    /**
-     * Cached intersection tag operation instances.
-     */
-    private ?IntersectionAddEntry $intersectionAddEntryOperation = null;
-
-    private ?IntersectionGetEntries $intersectionGetEntriesOperation = null;
-
-    private ?IntersectionFlushStaleEntries $intersectionFlushStaleEntriesOperation = null;
-
-    private ?IntersectionFlush $intersectionFlushOperation = null;
+    private ?IntersectionTagOperations $intersectionTagOperations = null;
 
     /**
      * Create a new Redis store.
@@ -247,150 +209,29 @@ class RedisStore extends TaggableStore implements LockProvider
     }
 
     /**
-     * Store an item in the cache with tags (union mode).
+     * Get the union tag operations container.
      *
-     * @param array<int, string|int> $tags Array of tag names
+     * Use this to access all union-mode tagged cache operations.
      */
-    public function putWithTags(string $key, mixed $value, int $seconds, array $tags): bool
+    public function unionTagOps(): UnionTagOperations
     {
-        return $this->getUnionPutOperation()->execute($key, $value, $seconds, $tags);
+        return $this->unionTagOperations ??= new UnionTagOperations(
+            $this->getContext(),
+            $this->getSerialization()
+        );
     }
 
     /**
-     * Store multiple items in the cache with tags (union mode).
+     * Get the intersection tag operations container.
      *
-     * @param array<string, mixed> $values Key-value pairs
-     * @param array<int, string|int> $tags Array of tag names
+     * Use this to access all intersection-mode tagged cache operations.
      */
-    public function putManyWithTags(array $values, int $seconds, array $tags): bool
+    public function intersectionTagOps(): IntersectionTagOperations
     {
-        return $this->getUnionPutManyOperation()->execute($values, $seconds, $tags);
-    }
-
-    /**
-     * Store an item in the cache if the key doesn't exist, with tags (union mode).
-     *
-     * @param array<int, string|int> $tags Array of tag names
-     */
-    public function addWithTags(string $key, mixed $value, int $seconds, array $tags): bool
-    {
-        return $this->getUnionAddOperation()->execute($key, $value, $seconds, $tags);
-    }
-
-    /**
-     * Store an item in the cache indefinitely with tags (union mode).
-     *
-     * @param array<int, string|int> $tags Array of tag names
-     */
-    public function foreverWithTags(string $key, mixed $value, array $tags): bool
-    {
-        return $this->getUnionForeverOperation()->execute($key, $value, $tags);
-    }
-
-    /**
-     * Increment the value of an item in the cache with tags (union mode).
-     *
-     * @param array<int, string|int> $tags Array of tag names
-     * @return int|false The new value after incrementing, or false on failure
-     */
-    public function incrementWithTags(string $key, int $value, array $tags): int|bool
-    {
-        return $this->getUnionIncrementOperation()->execute($key, $value, $tags);
-    }
-
-    /**
-     * Decrement the value of an item in the cache with tags (union mode).
-     *
-     * @param array<int, string|int> $tags Array of tag names
-     * @return int|false The new value after decrementing, or false on failure
-     */
-    public function decrementWithTags(string $key, int $value, array $tags): int|bool
-    {
-        return $this->getUnionDecrementOperation()->execute($key, $value, $tags);
-    }
-
-    /**
-     * Get all keys associated with a tag.
-     *
-     * @return Generator<string> Generator yielding cache keys (without prefix)
-     */
-    public function getTaggedKeys(string $tag): Generator
-    {
-        return $this->getGetTaggedKeysOperation()->execute($tag);
-    }
-
-    /**
-     * Flush all cache items that have any of the specified tags (union mode).
-     *
-     * This is the lazy flush implementation - deletes items, reverse indexes,
-     * tag hashes, and updates the registry.
-     *
-     * @param array<int, string|int> $tags Array of tag names
-     */
-    public function flushTags(array $tags): bool
-    {
-        return $this->getUnionFlushOperation()->execute($tags);
-    }
-
-    /**
-     * Get all items (keys and values) for a set of tags (union mode).
-     *
-     * @param array<int, string|int> $tags Array of tag names
-     * @return Generator<string, mixed> Generator yielding key => value pairs
-     */
-    public function tagItems(array $tags): Generator
-    {
-        return $this->getGetTagItemsOperation()->execute($tags);
-    }
-
-    /**
-     * Add a cache key entry to intersection tag sorted sets.
-     *
-     * @param string $key The cache key (without prefix)
-     * @param int $ttl TTL in seconds (0 means forever)
-     * @param array<string> $tagIds Array of tag identifiers (e.g., "tag:users:entries")
-     * @param string|null $updateWhen Optional ZADD flag: 'NX', 'XX', 'GT', 'LT'
-     */
-    public function addIntersectionEntry(string $key, int $ttl, array $tagIds, ?string $updateWhen = null): void
-    {
-        $this->getIntersectionAddEntryOperation()->execute($key, $ttl, $tagIds, $updateWhen);
-    }
-
-    /**
-     * Get all cache key entries from intersection tag sorted sets.
-     *
-     * @param array<string> $tagIds Array of tag identifiers (e.g., "tag:users:entries")
-     * @return LazyCollection<int, string> Lazy collection yielding cache keys (without prefix)
-     */
-    public function getIntersectionEntries(array $tagIds): LazyCollection
-    {
-        return $this->getIntersectionGetEntriesOperation()->execute($tagIds);
-    }
-
-    /**
-     * Flush stale entries from intersection tag sorted sets.
-     *
-     * Removes entries with TTL scores that have expired (between 0 and current timestamp).
-     * Forever items (score -1) are not affected.
-     *
-     * @param array<string> $tagIds Array of tag identifiers (e.g., "tag:users:entries")
-     */
-    public function flushStaleIntersectionEntries(array $tagIds): void
-    {
-        $this->getIntersectionFlushStaleEntriesOperation()->execute($tagIds);
-    }
-
-    /**
-     * Flush all cache entries for the given intersection tags.
-     *
-     * This deletes all cache keys associated with the tags and the tag sorted sets themselves.
-     *
-     * @param array<string> $tagIds Array of tag identifiers (e.g., "tag:users:entries")
-     * @param array<string> $tagNames Array of tag names (e.g., ["users", "posts"])
-     */
-    public function flushIntersectionTags(array $tagIds, array $tagNames): void
-    {
-        $this->getIntersectionFlushOperation()->execute($tagIds, $tagNames);
+        return $this->intersectionTagOperations ??= new IntersectionTagOperations(
+            $this->getContext(),
+            $this->getSerialization()
+        );
     }
 
     /**
@@ -508,6 +349,14 @@ class RedisStore extends TaggableStore implements LockProvider
     }
 
     /**
+     * Get the Serialization instance.
+     */
+    public function getSerialization(): Serialization
+    {
+        return $this->serialization ??= new Serialization($this->getContext());
+    }
+
+    /**
      * Get the PoolFactory instance, lazily resolving if not provided.
      */
     protected function getPoolFactory(): PoolFactory
@@ -532,14 +381,6 @@ class RedisStore extends TaggableStore implements LockProvider
     }
 
     /**
-     * Get the Serialization instance.
-     */
-    private function getSerialization(): Serialization
-    {
-        return $this->serialization ??= new Serialization($this->getContext());
-    }
-
-    /**
      * Resolve the PoolFactory from the container.
      */
     private function resolvePoolFactory(): PoolFactory
@@ -554,6 +395,8 @@ class RedisStore extends TaggableStore implements LockProvider
     {
         $this->context = null;
         $this->serialization = null;
+
+        // Shared operations
         $this->getOperation = null;
         $this->manyOperation = null;
         $this->putOperation = null;
@@ -564,21 +407,10 @@ class RedisStore extends TaggableStore implements LockProvider
         $this->incrementOperation = null;
         $this->decrementOperation = null;
         $this->flushOperation = null;
-        // Tagged operations (union mode)
-        $this->unionPutOperation = null;
-        $this->unionAddOperation = null;
-        $this->unionForeverOperation = null;
-        $this->unionIncrementOperation = null;
-        $this->unionDecrementOperation = null;
-        $this->unionPutManyOperation = null;
-        $this->getTaggedKeysOperation = null;
-        $this->getTagItemsOperation = null;
-        $this->unionFlushOperation = null;
-        // Tagged operations (intersection mode)
-        $this->intersectionAddEntryOperation = null;
-        $this->intersectionGetEntriesOperation = null;
-        $this->intersectionFlushStaleEntriesOperation = null;
-        $this->intersectionFlushOperation = null;
+
+        // Tag operation containers
+        $this->unionTagOperations = null;
+        $this->intersectionTagOperations = null;
     }
 
     private function getGetOperation(): Get
@@ -647,104 +479,5 @@ class RedisStore extends TaggableStore implements LockProvider
     private function getFlushOperation(): Flush
     {
         return $this->flushOperation ??= new Flush($this->getContext());
-    }
-
-    private function getUnionPutOperation(): UnionPut
-    {
-        return $this->unionPutOperation ??= new UnionPut(
-            $this->getContext(),
-            $this->getSerialization()
-        );
-    }
-
-    private function getUnionAddOperation(): UnionAdd
-    {
-        return $this->unionAddOperation ??= new UnionAdd(
-            $this->getContext(),
-            $this->getSerialization()
-        );
-    }
-
-    private function getUnionForeverOperation(): UnionForever
-    {
-        return $this->unionForeverOperation ??= new UnionForever(
-            $this->getContext(),
-            $this->getSerialization()
-        );
-    }
-
-    private function getUnionIncrementOperation(): UnionIncrement
-    {
-        return $this->unionIncrementOperation ??= new UnionIncrement(
-            $this->getContext()
-        );
-    }
-
-    private function getUnionDecrementOperation(): UnionDecrement
-    {
-        return $this->unionDecrementOperation ??= new UnionDecrement(
-            $this->getContext()
-        );
-    }
-
-    private function getUnionPutManyOperation(): UnionPutMany
-    {
-        return $this->unionPutManyOperation ??= new UnionPutMany(
-            $this->getContext(),
-            $this->getSerialization()
-        );
-    }
-
-    private function getGetTaggedKeysOperation(): GetTaggedKeys
-    {
-        return $this->getTaggedKeysOperation ??= new GetTaggedKeys(
-            $this->getContext()
-        );
-    }
-
-    private function getGetTagItemsOperation(): GetTagItems
-    {
-        return $this->getTagItemsOperation ??= new GetTagItems(
-            $this->getContext(),
-            $this->getSerialization(),
-            $this->getGetTaggedKeysOperation()
-        );
-    }
-
-    private function getUnionFlushOperation(): UnionFlush
-    {
-        return $this->unionFlushOperation ??= new UnionFlush(
-            $this->getContext(),
-            $this->getGetTaggedKeysOperation()
-        );
-    }
-
-    private function getIntersectionAddEntryOperation(): IntersectionAddEntry
-    {
-        return $this->intersectionAddEntryOperation ??= new IntersectionAddEntry(
-            $this->getContext()
-        );
-    }
-
-    private function getIntersectionGetEntriesOperation(): IntersectionGetEntries
-    {
-        return $this->intersectionGetEntriesOperation ??= new IntersectionGetEntries(
-            $this->getContext()
-        );
-    }
-
-    private function getIntersectionFlushStaleEntriesOperation(): IntersectionFlushStaleEntries
-    {
-        return $this->intersectionFlushStaleEntriesOperation ??= new IntersectionFlushStaleEntries(
-            $this->getContext()
-        );
-    }
-
-    private function getIntersectionFlushOperation(): IntersectionFlush
-    {
-        return $this->intersectionFlushOperation ??= new IntersectionFlush(
-            $this->getContext(),
-            $this->getIntersectionGetEntriesOperation()
-        );
     }
 }

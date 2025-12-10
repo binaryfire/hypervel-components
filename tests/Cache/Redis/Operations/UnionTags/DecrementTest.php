@@ -40,7 +40,7 @@ class DecrementTest extends TestCase
             ->andReturn(5); // New value after decrement
 
         $redis = $this->createStore($connection);
-        $result = $redis->decrementWithTags('counter', 5, ['stats']);
+        $result = $redis->unionTagOps()->decrement()->execute('counter', 5, ['stats']);
         $this->assertSame(5, $result);
     }
 }

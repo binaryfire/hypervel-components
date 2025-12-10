@@ -79,7 +79,7 @@ class UnionTagSet extends TagSet
         $seen = [];
 
         foreach ($this->names as $name) {
-            foreach ($this->getRedisStore()->getTaggedKeys($name) as $key) {
+            foreach ($this->getRedisStore()->unionTagOps()->getTaggedKeys()->execute($name) as $key) {
                 if (! isset($seen[$key])) {
                     $seen[$key] = true;
                     yield $key;
@@ -107,7 +107,7 @@ class UnionTagSet extends TagSet
      */
     public function flush(): void
     {
-        $this->getRedisStore()->flushTags($this->names);
+        $this->getRedisStore()->unionTagOps()->flush()->execute($this->names);
     }
 
     /**
@@ -115,7 +115,7 @@ class UnionTagSet extends TagSet
      */
     public function flushTag(string $name): string
     {
-        $this->getRedisStore()->flushTags([$name]);
+        $this->getRedisStore()->unionTagOps()->flush()->execute([$name]);
 
         return $this->tagKey($name);
     }

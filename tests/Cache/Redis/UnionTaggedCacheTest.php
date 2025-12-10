@@ -6,51 +6,37 @@ namespace Hypervel\Tests\Cache\Redis;
 
 use BadMethodCallException;
 use Generator;
-use Hyperf\Redis\Pool\PoolFactory;
-use Hyperf\Redis\Pool\RedisPool;
-use Hyperf\Redis\RedisFactory;
-use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Cache\Redis\UnionTaggedCache;
 use Hypervel\Cache\Redis\UnionTagSet;
-use Hypervel\Cache\RedisStore;
 use Hypervel\Cache\TaggedCache;
-use Hypervel\Redis\RedisConnection;
+use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
-use Mockery\MockInterface;
 
 /**
+ * Tests for UnionTaggedCache behavior.
+ *
+ * These tests verify the high-level API behavior of union-mode tagged cache operations.
+ * For detailed operation tests, see tests/Cache/Redis/Operations/UnionTags/.
+ *
  * @internal
  * @coversNothing
  */
 class UnionTaggedCacheTest extends TestCase
 {
-    private MockInterface|RedisStore $store;
-
-    private MockInterface|StoreContext $context;
-
-    private MockInterface|RedisConnection $connection;
-
-    private UnionTagSet $tagSet;
-
-    /**
-     * Set up test fixtures.
-     */
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        $this->mockStore();
-    }
+    use MocksRedisConnections;
 
     /**
      * @test
      */
     public function testIsInstanceOfTaggedCache(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
 
         $this->assertInstanceOf(TaggedCache::class, $cache);
+        $this->assertInstanceOf(UnionTaggedCache::class, $cache);
     }
 
     /**
@@ -58,7 +44,9 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testGetThrowsBadMethodCallException(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
 
         $this->expectException(BadMethodCallException::class);
         $this->expectExceptionMessage('Cannot get items via tags in union mode');
@@ -71,7 +59,9 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testManyThrowsBadMethodCallException(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
 
         $this->expectException(BadMethodCallException::class);
         $this->expectExceptionMessage('Cannot get items via tags in union mode');
@@ -84,7 +74,9 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testHasThrowsBadMethodCallException(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
 
         $this->expectException(BadMethodCallException::class);
         $this->expectExceptionMessage('Cannot check existence via tags in union mode');
@@ -97,7 +89,9 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testPullThrowsBadMethodCallException(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
 
         $this->expectException(BadMethodCallException::class);
         $this->expectExceptionMessage('Cannot pull items via tags in union mode');
@@ -110,7 +104,9 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testForgetThrowsBadMethodCallException(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
 
         $this->expectException(BadMethodCallException::class);
         $this->expectExceptionMessage('Cannot forget items via tags in union mode');
@@ -121,16 +117,21 @@ class UnionTaggedCacheTest extends TestCase
     /**
      * @test
      */
-    public function testPutDelegatesToStorePutWithTags(): void
+    public function testPutStoresValueWithTags(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('putWithTags')
+        // Union mode uses Lua script for atomic put with tags
+        $client->shouldReceive('evalSha')
             ->once()
-            ->with('mykey', 'myvalue', 60, ['users', 'posts'])
+            ->andReturn(false);
+        $client->shouldReceive('eval')
+            ->once()
             ->andReturn(true);
 
-        $result = $cache->put('mykey', 'myvalue', 60);
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users', 'posts'])->put('mykey', 'myvalue', 60);
 
         $this->assertTrue($result);
     }
@@ -140,14 +141,19 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testPutWithNullTtlCallsForever(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('foreverWithTags')
+        // Forever operation uses Lua script
+        $client->shouldReceive('evalSha')
             ->once()
-            ->with('mykey', 'myvalue', ['users', 'posts'])
+            ->andReturn(false);
+        $client->shouldReceive('eval')
+            ->once()
             ->andReturn(true);
 
-        $result = $cache->put('mykey', 'myvalue', null);
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users', 'posts'])->put('mykey', 'myvalue', null);
 
         $this->assertTrue($result);
     }
@@ -157,7 +163,9 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testPutWithZeroTtlReturnsFalse(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
 
         $result = $cache->put('mykey', 'myvalue', 0);
 
@@ -169,14 +177,23 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testPutWithArrayCallsPutMany(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('putManyWithTags')
-            ->once()
-            ->with(['key1' => 'value1', 'key2' => 'value2'], 60, ['users', 'posts'])
-            ->andReturn(true);
+        // PutMany uses pipeline with Lua operations
+        $client->shouldReceive('pipeline')->andReturn($client);
+        $client->shouldReceive('smembers')->andReturn($client);
+        $client->shouldReceive('exec')->andReturn([[], []]);
+        $client->shouldReceive('setex')->andReturn($client);
+        $client->shouldReceive('del')->andReturn($client);
+        $client->shouldReceive('sadd')->andReturn($client);
+        $client->shouldReceive('expire')->andReturn($client);
+        $client->shouldReceive('hSet')->andReturn($client);
+        $client->shouldReceive('hexpire')->andReturn($client);
+        $client->shouldReceive('zadd')->andReturn($client);
 
-        $result = $cache->put(['key1' => 'value1', 'key2' => 'value2'], 60);
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->put(['key1' => 'value1', 'key2' => 'value2'], 60);
 
         $this->assertTrue($result);
     }
@@ -184,16 +201,25 @@ class UnionTaggedCacheTest extends TestCase
     /**
      * @test
      */
-    public function testPutManyDelegatesToStorePutManyWithTags(): void
+    public function testPutManyStoresMultipleValues(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('putManyWithTags')
-            ->once()
-            ->with(['key1' => 'value1', 'key2' => 'value2'], 120, ['users', 'posts'])
-            ->andReturn(true);
+        // PutMany uses pipeline
+        $client->shouldReceive('pipeline')->andReturn($client);
+        $client->shouldReceive('smembers')->andReturn($client);
+        $client->shouldReceive('exec')->andReturn([[], []]);
+        $client->shouldReceive('setex')->andReturn($client);
+        $client->shouldReceive('del')->andReturn($client);
+        $client->shouldReceive('sadd')->andReturn($client);
+        $client->shouldReceive('expire')->andReturn($client);
+        $client->shouldReceive('hSet')->andReturn($client);
+        $client->shouldReceive('hexpire')->andReturn($client);
+        $client->shouldReceive('zadd')->andReturn($client);
 
-        $result = $cache->putMany(['key1' => 'value1', 'key2' => 'value2'], 120);
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->putMany(['key1' => 'value1', 'key2' => 'value2'], 120);
 
         $this->assertTrue($result);
     }
@@ -203,19 +229,19 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testPutManyWithNullTtlCallsForeverForEach(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        // Should call forever for each value
-        $this->store->shouldReceive('foreverWithTags')
-            ->once()
-            ->with('key1', 'value1', ['users', 'posts'])
-            ->andReturn(true);
-        $this->store->shouldReceive('foreverWithTags')
-            ->once()
-            ->with('key2', 'value2', ['users', 'posts'])
+        // Forever for each key - called twice for 2 keys
+        $client->shouldReceive('evalSha')
+            ->twice()
+            ->andReturn(false);
+        $client->shouldReceive('eval')
+            ->twice()
             ->andReturn(true);
 
-        $result = $cache->putMany(['key1' => 'value1', 'key2' => 'value2'], null);
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->putMany(['key1' => 'value1', 'key2' => 'value2'], null);
 
         $this->assertTrue($result);
     }
@@ -225,7 +251,9 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testPutManyWithZeroTtlReturnsFalse(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $cache = $store->setTaggingMode('union')->tags(['users']);
 
         $result = $cache->putMany(['key1' => 'value1'], 0);
 
@@ -235,16 +263,21 @@ class UnionTaggedCacheTest extends TestCase
     /**
      * @test
      */
-    public function testAddDelegatesToStoreAddWithTags(): void
+    public function testAddStoresValueIfNotExists(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('addWithTags')
+        // Add uses Lua script with SET NX
+        $client->shouldReceive('evalSha')
             ->once()
-            ->with('mykey', 'myvalue', 60, ['users', 'posts'])
+            ->andReturn(false);
+        $client->shouldReceive('eval')
+            ->once()
             ->andReturn(true);
 
-        $result = $cache->add('mykey', 'myvalue', 60);
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->add('mykey', 'myvalue', 60);
 
         $this->assertTrue($result);
     }
@@ -254,14 +287,25 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testAddWithNullTtlDefaultsToOneYear(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('addWithTags')
+        // Add with null TTL defaults to 1 year (31536000 seconds)
+        $client->shouldReceive('evalSha')
             ->once()
-            ->with('mykey', 'myvalue', 31536000, ['users', 'posts'])
+            ->andReturn(false);
+        $client->shouldReceive('eval')
+            ->once()
+            ->withArgs(function ($script, $args, $numKeys) {
+                // Check that TTL argument is ~1 year
+                $this->assertSame(31536000, $args[3]);
+
+                return true;
+            })
             ->andReturn(true);
 
-        $result = $cache->add('mykey', 'myvalue', null);
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->add('mykey', 'myvalue', null);
 
         $this->assertTrue($result);
     }
@@ -271,7 +315,9 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testAddWithZeroTtlReturnsFalse(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $cache = $store->setTaggingMode('union')->tags(['users']);
 
         $result = $cache->add('mykey', 'myvalue', 0);
 
@@ -281,16 +327,21 @@ class UnionTaggedCacheTest extends TestCase
     /**
      * @test
      */
-    public function testForeverDelegatesToStoreForeverWithTags(): void
+    public function testForeverStoresValueIndefinitely(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('foreverWithTags')
+        // Forever uses Lua script without expiration
+        $client->shouldReceive('evalSha')
             ->once()
-            ->with('mykey', 'myvalue', ['users', 'posts'])
+            ->andReturn(false);
+        $client->shouldReceive('eval')
+            ->once()
             ->andReturn(true);
 
-        $result = $cache->forever('mykey', 'myvalue');
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->forever('mykey', 'myvalue');
 
         $this->assertTrue($result);
     }
@@ -298,16 +349,18 @@ class UnionTaggedCacheTest extends TestCase
     /**
      * @test
      */
-    public function testIncrementDelegatesToStoreIncrementWithTags(): void
+    public function testIncrementReturnsNewValue(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('incrementWithTags')
+        // Increment uses Lua script with INCRBY
+        $client->shouldReceive('evalSha')
             ->once()
-            ->with('counter', 1, ['users', 'posts'])
             ->andReturn(5);
 
-        $result = $cache->increment('counter');
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->increment('counter');
 
         $this->assertSame(5, $result);
     }
@@ -317,14 +370,15 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testIncrementWithCustomValue(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('incrementWithTags')
+        $client->shouldReceive('evalSha')
             ->once()
-            ->with('counter', 10, ['users', 'posts'])
             ->andReturn(15);
 
-        $result = $cache->increment('counter', 10);
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->increment('counter', 10);
 
         $this->assertSame(15, $result);
     }
@@ -332,16 +386,18 @@ class UnionTaggedCacheTest extends TestCase
     /**
      * @test
      */
-    public function testDecrementDelegatesToStoreDecrementWithTags(): void
+    public function testDecrementReturnsNewValue(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('decrementWithTags')
+        // Decrement uses Lua script with DECRBY
+        $client->shouldReceive('evalSha')
             ->once()
-            ->with('counter', 1, ['users', 'posts'])
             ->andReturn(3);
 
-        $result = $cache->decrement('counter');
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->decrement('counter');
 
         $this->assertSame(3, $result);
     }
@@ -351,14 +407,15 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testDecrementWithCustomValue(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('decrementWithTags')
+        $client->shouldReceive('evalSha')
             ->once()
-            ->with('counter', 5, ['users', 'posts'])
             ->andReturn(0);
 
-        $result = $cache->decrement('counter', 5);
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->decrement('counter', 5);
 
         $this->assertSame(0, $result);
     }
@@ -366,15 +423,28 @@ class UnionTaggedCacheTest extends TestCase
     /**
      * @test
      */
-    public function testFlushDelegatesToTagSetFlush(): void
+    public function testFlushDeletesAllTaggedItems(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('flushTags')
+        // GetTaggedKeys uses hlen to check size
+        // When small (< threshold), it uses hkeys directly instead of scan
+        $client->shouldReceive('hlen')
+            ->andReturn(2);
+        $client->shouldReceive('hkeys')
             ->once()
-            ->with(['users', 'posts']);
+            ->andReturn(['key1', 'key2']);
 
-        $result = $cache->flush();
+        // After getting keys, Flush uses pipeline for delete operations
+        $client->shouldReceive('pipeline')->andReturn($client);
+        $client->shouldReceive('del')->andReturn($client);
+        $client->shouldReceive('unlink')->andReturn($client);
+        $client->shouldReceive('zrem')->andReturn($client);
+        $client->shouldReceive('exec')->andReturn([2, 1]);
+
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->flush();
 
         $this->assertTrue($result);
     }
@@ -382,36 +452,18 @@ class UnionTaggedCacheTest extends TestCase
     /**
      * @test
      */
-    public function testItemsDelegatesToStoreTagItems(): void
-    {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
-
-        $generator = $this->createGenerator(['key1' => 'value1', 'key2' => 'value2']);
-
-        $this->store->shouldReceive('tagItems')
-            ->once()
-            ->with(['users', 'posts'])
-            ->andReturn($generator);
-
-        $result = $cache->items();
-
-        $this->assertInstanceOf(Generator::class, $result);
-    }
-
-    /**
-     * @test
-     */
     public function testRememberRetrievesExistingValueFromStore(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
 
-        // Store returns existing value
-        $this->store->shouldReceive('get')
+        // The Get operation calls $connection->get()
+        $connection->shouldReceive('get')
             ->once()
-            ->with('mykey')
-            ->andReturn('cached_value');
+            ->with('prefix:mykey')
+            ->andReturn(serialize('cached_value'));
 
-        $result = $cache->remember('mykey', 60, fn () => 'new_value');
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->remember('mykey', 60, fn () => 'new_value');
 
         $this->assertSame('cached_value', $result);
     }
@@ -421,22 +473,23 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testRememberCallsCallbackAndStoresValueWhenMiss(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
         // Store returns null (miss)
-        $this->store->shouldReceive('get')
+        $connection->shouldReceive('get')
             ->once()
-            ->with('mykey')
+            ->with('prefix:mykey')
             ->andReturnNull();
 
         // Should store the value with tags
-        $this->store->shouldReceive('putWithTags')
+        $client->shouldReceive('evalSha')
             ->once()
-            ->with('mykey', 'computed_value', 60, ['users', 'posts'])
             ->andReturn(true);
 
         $callCount = 0;
-        $result = $cache->remember('mykey', 60, function () use (&$callCount) {
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->remember('mykey', 60, function () use (&$callCount) {
             $callCount++;
 
             return 'computed_value';
@@ -451,15 +504,16 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testRememberForeverRetrievesExistingValueFromStore(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
 
         // Store returns existing value
-        $this->store->shouldReceive('get')
+        $connection->shouldReceive('get')
             ->once()
-            ->with('mykey')
-            ->andReturn('cached_value');
+            ->with('prefix:mykey')
+            ->andReturn(serialize('cached_value'));
 
-        $result = $cache->rememberForever('mykey', fn () => 'new_value');
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->rememberForever('mykey', fn () => 'new_value');
 
         $this->assertSame('cached_value', $result);
     }
@@ -469,21 +523,22 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testRememberForeverCallsCallbackAndStoresValueWhenMiss(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
         // Store returns null (miss)
-        $this->store->shouldReceive('get')
+        $connection->shouldReceive('get')
             ->once()
-            ->with('mykey')
+            ->with('prefix:mykey')
             ->andReturnNull();
 
         // Should store the value forever with tags
-        $this->store->shouldReceive('foreverWithTags')
+        $client->shouldReceive('evalSha')
             ->once()
-            ->with('mykey', 'computed_value', ['users', 'posts'])
             ->andReturn(true);
 
-        $result = $cache->rememberForever('mykey', fn () => 'computed_value');
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->rememberForever('mykey', fn () => 'computed_value');
 
         $this->assertSame('computed_value', $result);
     }
@@ -493,9 +548,11 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testGetUnionTagsReturnsTagSet(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
 
-        $this->assertSame($this->tagSet, $cache->getUnionTags());
+        $this->assertInstanceOf(UnionTagSet::class, $cache->getUnionTags());
     }
 
     /**
@@ -503,16 +560,16 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testItemKeyReturnsKeyUnchanged(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
 
         // In union mode, keys are NOT namespaced by tags
-        // Access protected method via remember which uses itemKey
-        $this->store->shouldReceive('get')
+        $connection->shouldReceive('get')
             ->once()
-            ->with('mykey') // Should NOT be prefixed with tag namespace
-            ->andReturn('value');
+            ->with('prefix:mykey') // Should NOT have tag namespace prefix
+            ->andReturn(serialize('value'));
 
-        $cache->remember('mykey', 60, fn () => 'fallback');
+        $store = $this->createStore($connection);
+        $store->setTaggingMode('union')->tags(['users'])->remember('mykey', 60, fn () => 'fallback');
     }
 
     /**
@@ -520,14 +577,18 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testIncrementReturnsFalseOnFailure(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('incrementWithTags')
+        $client->shouldReceive('evalSha')
             ->once()
-            ->with('counter', 1, ['users', 'posts'])
+            ->andReturn(false);
+        $client->shouldReceive('eval')
+            ->once()
             ->andReturn(false);
 
-        $result = $cache->increment('counter');
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->increment('counter');
 
         $this->assertFalse($result);
     }
@@ -537,14 +598,18 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testDecrementReturnsFalseOnFailure(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $this->store->shouldReceive('decrementWithTags')
+        $client->shouldReceive('evalSha')
             ->once()
-            ->with('counter', 1, ['users', 'posts'])
+            ->andReturn(false);
+        $client->shouldReceive('eval')
+            ->once()
             ->andReturn(false);
 
-        $result = $cache->decrement('counter');
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->decrement('counter');
 
         $this->assertFalse($result);
     }
@@ -554,17 +619,18 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testRememberPropagatesExceptionFromCallback(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
 
-        $this->store->shouldReceive('get')
+        $connection->shouldReceive('get')
             ->once()
-            ->with('mykey')
+            ->with('prefix:mykey')
             ->andReturnNull();
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Callback failed');
 
-        $cache->remember('mykey', 60, function () {
+        $store = $this->createStore($connection);
+        $store->setTaggingMode('union')->tags(['users'])->remember('mykey', 60, function () {
             throw new \RuntimeException('Callback failed');
         });
     }
@@ -574,17 +640,18 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testRememberForeverPropagatesExceptionFromCallback(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
 
-        $this->store->shouldReceive('get')
+        $connection->shouldReceive('get')
             ->once()
-            ->with('mykey')
+            ->with('prefix:mykey')
             ->andReturnNull();
 
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Forever callback failed');
 
-        $cache->rememberForever('mykey', function () {
+        $store = $this->createStore($connection);
+        $store->setTaggingMode('union')->tags(['users'])->rememberForever('mykey', function () {
             throw new \RuntimeException('Forever callback failed');
         });
     }
@@ -594,16 +661,17 @@ class UnionTaggedCacheTest extends TestCase
      */
     public function testRememberDoesNotCallCallbackWhenValueExists(): void
     {
-        $cache = new UnionTaggedCache($this->store, $this->tagSet);
+        $connection = $this->mockConnection();
 
         // Store returns existing value
-        $this->store->shouldReceive('get')
+        $connection->shouldReceive('get')
             ->once()
-            ->with('mykey')
-            ->andReturn('cached_value');
+            ->with('prefix:mykey')
+            ->andReturn(serialize('cached_value'));
 
         $callCount = 0;
-        $result = $cache->remember('mykey', 60, function () use (&$callCount) {
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->remember('mykey', 60, function () use (&$callCount) {
             $callCount++;
 
             return 'new_value';
@@ -614,38 +682,35 @@ class UnionTaggedCacheTest extends TestCase
     }
 
     /**
-     * Create a generator from an array for testing.
+     * @test
      */
-    private function createGenerator(array $items): Generator
+    public function testItemsReturnsGenerator(): void
     {
-        foreach ($items as $key => $value) {
-            yield $key => $value;
-        }
-    }
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-    /**
-     * Set up the store mock.
-     */
-    private function mockStore(): void
-    {
-        $this->connection = m::mock(RedisConnection::class);
-        $this->connection->shouldReceive('release')->zeroOrMoreTimes();
-        $this->connection->shouldReceive('serialized')->andReturn(false)->byDefault();
+        // GetTaggedKeys uses hlen to check size first
+        $client->shouldReceive('hlen')
+            ->andReturn(2);
 
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($this->connection);
+        // When small (< threshold), it uses hkeys directly
+        $client->shouldReceive('hkeys')
+            ->once()
+            ->andReturn(['key1', 'key2']);
 
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        // Get values for found keys (mget receives array)
+        $client->shouldReceive('mget')
+            ->once()
+            ->with(['prefix:key1', 'prefix:key2'])
+            ->andReturn([serialize('value1'), serialize('value2')]);
 
-        $this->context = m::mock(StoreContext::class);
+        $store = $this->createStore($connection);
+        $result = $store->setTaggingMode('union')->tags(['users'])->items();
 
-        // Create a partial mock of RedisStore to allow stubbing methods that don't exist yet
-        $this->store = m::mock(RedisStore::class)->makePartial();
-        $this->store->shouldReceive('getContext')->andReturn($this->context);
-        $this->store->shouldReceive('getPrefix')->andReturn('prefix:');
+        $this->assertInstanceOf(Generator::class, $result);
 
-        // Create the tag set with the mocked store
-        $this->tagSet = new UnionTagSet($this->store, ['users', 'posts']);
+        // Iterate the generator to verify it works and trigger the Redis calls
+        $items = iterator_to_array($result);
+        $this->assertCount(2, $items);
     }
 }
