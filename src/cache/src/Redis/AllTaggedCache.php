@@ -10,7 +10,6 @@ use Hypervel\Cache\Contracts\Store;
 use Hypervel\Cache\Events\KeyWritten;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Cache\TaggedCache;
-use Hypervel\Cache\TagSet;
 
 class AllTaggedCache extends TaggedCache
 {
@@ -20,13 +19,6 @@ class AllTaggedCache extends TaggedCache
      * @var RedisStore
      */
     protected Store $store;
-
-    /**
-     * The tag set instance.
-     *
-     * @var AllTagSet
-     */
-    protected TagSet $tags;
 
     /**
      * Store an item in the cache if the key does not exist.
@@ -190,6 +182,14 @@ class AllTaggedCache extends TaggedCache
         $this->tags->flushStaleEntries();
 
         return true;
+    }
+
+    /**
+     * Get the tag set instance (covariant return type).
+     */
+    public function getTags(): AllTagSet
+    {
+        return $this->tags;
     }
 
     /**

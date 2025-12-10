@@ -2,25 +2,23 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\AllTags;
+namespace Hypervel\Cache\Redis\Operations\AllTag;
 
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Store an item in the cache if it doesn't exist, with all tag tracking.
+ * Store an item in the cache with all tag tracking.
  *
- * Combines the ZADD operations for tag tracking with the atomic add
- * in a single connection checkout for efficiency.
+ * Combines the ZADD operations for tag tracking with the SETEX for
+ * cache storage in a single connection checkout for efficiency.
  *
- * Uses Redis SET with NX (only set if Not eXists) and EX (expiration) flags
- * for atomic "add if not exists" semantics without requiring Lua scripts.
- *
- * Note: Tag entries are always added, even if the key exists. This matches
- * the original behavior where addEntry() is called before checking existence.
+ * Each tag maintains a sorted set where:
+ * - Members are cache keys (namespaced)
+ * - Scores are TTL timestamps (when the entry expires)
  */
-class Add
+class Put
 {
     public function __construct(
         private readonly StoreContext $context,
@@ -28,13 +26,13 @@ class Add
     ) {}
 
     /**
-     * Execute the add operation with tag tracking.
+     * Execute the put operation with tag tracking.
      *
      * @param string $key The cache key (already namespaced by caller)
      * @param mixed $value The value to store
      * @param int $seconds TTL in seconds
-     * @param array<string> $tagIds Array of tag identifiers
-     * @return bool True if the key was added (didn't exist), false if it already existed
+     * @param array<string> $tagIds Array of tag identifiers (e.g., "_all:tag:users:entries")
+     * @return bool True if successful
      */
     public function execute(string $key, mixed $value, int $seconds, array $tagIds): bool
     {
@@ -48,7 +46,7 @@ class Add
     /**
      * Execute using pipeline for standard Redis (non-cluster).
      *
-     * Pipelines ZADD commands for all tags, then uses SET NX EX for atomic add.
+     * Pipelines ZADD commands for all tags + SETEX in a single round trip.
      */
     private function executePipeline(string $key, mixed $value, int $seconds, array $tagIds): bool
     {
@@ -56,34 +54,30 @@ class Add
             $client = $conn->client();
             $prefix = $this->context->prefix();
             $score = now()->addSeconds($seconds)->getTimestamp();
+            $serialized = $this->serialization->serialize($value);
 
-            // Pipeline the ZADD operations for tag tracking
-            if (! empty($tagIds)) {
-                $pipeline = $client->pipeline();
+            $pipeline = $client->pipeline();
 
-                foreach ($tagIds as $tagId) {
-                    $pipeline->zadd($prefix . $tagId, $score, $key);
-                }
-
-                $pipeline->exec();
+            // ZADD to each tag's sorted set
+            foreach ($tagIds as $tagId) {
+                $pipeline->zadd($prefix . $tagId, $score, $key);
             }
 
-            // SET key value EX seconds NX - atomic "add if not exists"
-            $result = $client->set(
-                $prefix . $key,
-                $this->serialization->serialize($value),
-                ['EX' => max(1, $seconds), 'NX']
-            );
+            // SETEX for the cache value
+            $pipeline->setex($prefix . $key, max(1, $seconds), $serialized);
 
-            return (bool) $result;
+            $results = $pipeline->exec();
+
+            // Last result is the SETEX - check it succeeded
+            return $results !== false && end($results) !== false;
         });
     }
 
     /**
      * Execute using sequential commands for Redis Cluster.
      *
-     * Sequential ZADD commands since tags may be in different slots,
-     * then SET NX EX for atomic add.
+     * Each tag sorted set may be in a different slot, so we must
+     * execute commands sequentially rather than in a pipeline.
      */
     private function executeCluster(string $key, mixed $value, int $seconds, array $tagIds): bool
     {
@@ -91,20 +85,15 @@ class Add
             $client = $conn->client();
             $prefix = $this->context->prefix();
             $score = now()->addSeconds($seconds)->getTimestamp();
+            $serialized = $this->serialization->serialize($value);
 
             // ZADD to each tag's sorted set (sequential - cross-slot)
             foreach ($tagIds as $tagId) {
                 $client->zadd($prefix . $tagId, $score, $key);
             }
 
-            // SET key value EX seconds NX - atomic "add if not exists"
-            $result = $client->set(
-                $prefix . $key,
-                $this->serialization->serialize($value),
-                ['EX' => max(1, $seconds), 'NX']
-            );
-
-            return (bool) $result;
+            // SETEX for the cache value
+            return (bool) $client->setex($prefix . $key, max(1, $seconds), $serialized);
         });
     }
 }

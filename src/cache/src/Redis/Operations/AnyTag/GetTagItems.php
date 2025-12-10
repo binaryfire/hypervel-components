@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\AnyTags;
+namespace Hypervel\Cache\Redis\Operations\AnyTag;
 
 use Generator;
 use Hypervel\Cache\Redis\Support\Serialization;

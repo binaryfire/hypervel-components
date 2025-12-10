@@ -80,7 +80,7 @@ enum TagMode: string
     /**
      * Check if this is Any mode.
      */
-    public function isAny(): bool
+    public function isAnyMode(): bool
     {
         return $this === self::Any;
     }
@@ -88,7 +88,7 @@ enum TagMode: string
     /**
      * Check if this is All mode.
      */
-    public function isAll(): bool
+    public function isAllMode(): bool
     {
         return $this === self::All;
     }
@@ -99,7 +99,7 @@ enum TagMode: string
      */
     public function supportsDirectGet(): bool
     {
-        return $this->isAny();
+        return $this->isAnyMode();
     }
 
     /**
@@ -107,7 +107,7 @@ enum TagMode: string
      */
     public function usesNamespacedKeys(): bool
     {
-        return $this->isAll();
+        return $this->isAllMode();
     }
 
     /**
@@ -115,7 +115,7 @@ enum TagMode: string
      */
     public function hasReverseIndex(): bool
     {
-        return $this->isAny();
+        return $this->isAnyMode();
     }
 
     /**
@@ -123,6 +123,6 @@ enum TagMode: string
      */
     public function hasRegistry(): bool
     {
-        return $this->isAny();
+        return $this->isAnyMode();
     }
 }

@@ -35,11 +35,6 @@ class AnyTaggedCache extends TaggedCache
     protected Store $store;
 
     /**
-     * The tag set instance.
-     */
-    protected AnyTagSet $anyTags;
-
-    /**
      * Create a new tagged cache instance.
      */
     public function __construct(
@@ -47,8 +42,6 @@ class AnyTaggedCache extends TaggedCache
         AnyTagSet $tags,
     ) {
         parent::__construct($store, $tags);
-
-        $this->anyTags = $tags;
     }
 
     /**
@@ -136,7 +129,7 @@ class AnyTaggedCache extends TaggedCache
             return false;
         }
 
-        $result = $this->store->anyTagOps()->put()->execute($key, $value, $seconds, $this->anyTags->getNames());
+        $result = $this->store->anyTagOps()->put()->execute($key, $value, $seconds, $this->tags->getNames());
 
         if ($result) {
             $this->event(new KeyWritten($key, $value, $seconds));
@@ -160,7 +153,7 @@ class AnyTaggedCache extends TaggedCache
             return false;
         }
 
-        $result = $this->store->anyTagOps()->putMany()->execute($values, $seconds, $this->anyTags->getNames());
+        $result = $this->store->anyTagOps()->putMany()->execute($values, $seconds, $this->tags->getNames());
 
         if ($result) {
             foreach ($values as $key => $value) {
@@ -187,7 +180,7 @@ class AnyTaggedCache extends TaggedCache
             }
         }
 
-        return $this->store->anyTagOps()->add()->execute($key, $value, $seconds, $this->anyTags->getNames());
+        return $this->store->anyTagOps()->add()->execute($key, $value, $seconds, $this->tags->getNames());
     }
 
     /**
@@ -195,7 +188,7 @@ class AnyTaggedCache extends TaggedCache
      */
     public function forever(string $key, mixed $value): bool
     {
-        $result = $this->store->anyTagOps()->forever()->execute($key, $value, $this->anyTags->getNames());
+        $result = $this->store->anyTagOps()->forever()->execute($key, $value, $this->tags->getNames());
 
         if ($result) {
             $this->event(new KeyWritten($key, $value));
@@ -209,7 +202,7 @@ class AnyTaggedCache extends TaggedCache
      */
     public function increment(string $key, int $value = 1): bool|int
     {
-        return $this->store->anyTagOps()->increment()->execute($key, $value, $this->anyTags->getNames());
+        return $this->store->anyTagOps()->increment()->execute($key, $value, $this->tags->getNames());
     }
 
     /**
@@ -217,7 +210,7 @@ class AnyTaggedCache extends TaggedCache
      */
     public function decrement(string $key, int $value = 1): bool|int
     {
-        return $this->store->anyTagOps()->decrement()->execute($key, $value, $this->anyTags->getNames());
+        return $this->store->anyTagOps()->decrement()->execute($key, $value, $this->tags->getNames());
     }
 
     /**
@@ -225,7 +218,7 @@ class AnyTaggedCache extends TaggedCache
      */
     public function flush(): bool
     {
-        $this->anyTags->flush();
+        $this->tags->flush();
 
         return true;
     }
@@ -239,7 +232,7 @@ class AnyTaggedCache extends TaggedCache
      */
     public function items(): Generator
     {
-        return $this->store->anyTagOps()->getTagItems()->execute($this->anyTags->getNames());
+        return $this->store->anyTagOps()->getTagItems()->execute($this->tags->getNames());
     }
 
     /**
@@ -300,11 +293,11 @@ class AnyTaggedCache extends TaggedCache
     }
 
     /**
-     * Get the tag set instance.
+     * Get the tag set instance (covariant return type).
      */
-    public function getAnyTags(): AnyTagSet
+    public function getTags(): AnyTagSet
     {
-        return $this->anyTags;
+        return $this->tags;
     }
 
     /**

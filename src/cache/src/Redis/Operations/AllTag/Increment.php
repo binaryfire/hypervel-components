@@ -2,24 +2,24 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\AllTags;
+namespace Hypervel\Cache\Redis\Operations\AllTag;
 
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Decrement a value in the cache with all tag tracking.
+ * Increment a value in the cache with all tag tracking.
  *
- * Combines the ZADD NX operations for tag tracking with DECRBY
+ * Combines the ZADD NX operations for tag tracking with INCRBY
  * in a single connection checkout for efficiency.
  *
  * Uses ZADD NX (only add if not exists) to avoid overwriting existing
  * tag entries that may have TTL information.
  */
-class Decrement
+class Increment
 {
     /**
-     * Score for decrement operations (no TTL - persists until deleted).
+     * Score for increment operations (no TTL - persists until deleted).
      */
     private const FOREVER_SCORE = -1;
 
@@ -28,12 +28,12 @@ class Decrement
     ) {}
 
     /**
-     * Execute the decrement operation with tag tracking.
+     * Execute the increment operation with tag tracking.
      *
      * @param string $key The cache key (already namespaced by caller)
-     * @param int $value The value to decrement by
+     * @param int $value The value to increment by
      * @param array<string> $tagIds Array of tag identifiers
-     * @return int|false The new value after decrementing, or false on failure
+     * @return int|false The new value after incrementing, or false on failure
      */
     public function execute(string $key, int $value, array $tagIds): int|false
     {
@@ -60,8 +60,8 @@ class Decrement
                 $pipeline->zadd($prefix . $tagId, ['NX'], self::FOREVER_SCORE, $key);
             }
 
-            // DECRBY for the value
-            $pipeline->decrby($prefix . $key, $value);
+            // INCRBY for the value
+            $pipeline->incrby($prefix . $key, $value);
 
             $results = $pipeline->exec();
 
@@ -69,7 +69,7 @@ class Decrement
                 return false;
             }
 
-            // Last result is the DECRBY result
+            // Last result is the INCRBY result
             return end($results);
         });
     }
@@ -88,8 +88,8 @@ class Decrement
                 $client->zadd($prefix . $tagId, ['NX'], self::FOREVER_SCORE, $key);
             }
 
-            // DECRBY for the value
-            return $client->decrby($prefix . $key, $value);
+            // INCRBY for the value
+            return $client->incrby($prefix . $key, $value);
         });
     }
 }

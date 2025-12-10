@@ -45,7 +45,7 @@ class PruneStaleTagsCommand extends Command
         $this->info("Pruning stale tags from '{$storeName}' store ({$tagMode->value} mode)...");
         $this->newLine();
 
-        if ($tagMode->isAny()) {
+        if ($tagMode->isAnyMode()) {
             $stats = $store->anyTagOps()->prune()->execute();
             $this->displayAnyModeStats($stats);
         } else {

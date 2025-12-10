@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\AllTags;
+namespace Hypervel\Cache\Redis\Operations\AllTag;
 
 use Hyperf\Collection\LazyCollection;
 use Hypervel\Cache\Redis\Support\StoreContext;

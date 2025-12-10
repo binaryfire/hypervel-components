@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache\Redis\Operations;
 
-use Hypervel\Cache\Redis\Operations\AnyTags\Add;
-use Hypervel\Cache\Redis\Operations\AnyTags\Decrement;
-use Hypervel\Cache\Redis\Operations\AnyTags\Flush;
-use Hypervel\Cache\Redis\Operations\AnyTags\Forever;
-use Hypervel\Cache\Redis\Operations\AnyTags\GetTaggedKeys;
-use Hypervel\Cache\Redis\Operations\AnyTags\GetTagItems;
-use Hypervel\Cache\Redis\Operations\AnyTags\Increment;
-use Hypervel\Cache\Redis\Operations\AnyTags\Prune;
-use Hypervel\Cache\Redis\Operations\AnyTags\Put;
-use Hypervel\Cache\Redis\Operations\AnyTags\PutMany;
+use Hypervel\Cache\Redis\Operations\AnyTag\Add;
+use Hypervel\Cache\Redis\Operations\AnyTag\Decrement;
+use Hypervel\Cache\Redis\Operations\AnyTag\Flush;
+use Hypervel\Cache\Redis\Operations\AnyTag\Forever;
+use Hypervel\Cache\Redis\Operations\AnyTag\GetTaggedKeys;
+use Hypervel\Cache\Redis\Operations\AnyTag\GetTagItems;
+use Hypervel\Cache\Redis\Operations\AnyTag\Increment;
+use Hypervel\Cache\Redis\Operations\AnyTag\Prune;
+use Hypervel\Cache\Redis\Operations\AnyTag\Put;
+use Hypervel\Cache\Redis\Operations\AnyTag\PutMany;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 
