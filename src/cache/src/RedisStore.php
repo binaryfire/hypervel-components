@@ -332,7 +332,7 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     public function setPrefix(string $prefix): void
     {
-        $this->prefix = ! empty($prefix) ? $prefix . ':' : '';
+        $this->prefix = $prefix;
         $this->clearCachedInstances();
     }
 

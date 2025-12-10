@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache;
 
+use Hypervel\Cache\Console\CacheDoctorCommand;
 use Hypervel\Cache\Console\ClearCommand;
 use Hypervel\Cache\Console\PruneStaleTagsCommand;
 use Hypervel\Cache\Contracts\Factory;
@@ -25,6 +26,7 @@ class ConfigProvider
                 CreateTimer::class,
             ],
             'commands' => [
+                CacheDoctorCommand::class,
                 ClearCommand::class,
                 PruneStaleTagsCommand::class,
             ],
