@@ -225,18 +225,25 @@ class IntersectionTaggedCacheTest extends TestCase
         $namespace = sha1('tag:people:entries|tag:author:entries') . ':';
         $expectedScore = now()->timestamp + 5;
 
-        // PutMany: ZADD + SETEX for each key in single pipeline
-        // First key: name
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', $expectedScore, $namespace . 'name')->andReturnSelf();
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', $expectedScore, $namespace . 'name')->andReturnSelf();
-        $pipeline->shouldReceive('setex')->once()->with("prefix:{$namespace}name", 5, serialize('Sally'))->andReturnSelf();
+        // PutMany uses variadic ZADD: one command per tag with all keys as members
+        // First tag (people) gets both keys in one ZADD
+        $pipeline->shouldReceive('zadd')
+            ->once()
+            ->with('prefix:tag:people:entries', $expectedScore, $namespace . 'name', $expectedScore, $namespace . 'age')
+            ->andReturnSelf();
 
-        // Second key: age (numeric, not serialized)
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', $expectedScore, $namespace . 'age')->andReturnSelf();
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', $expectedScore, $namespace . 'age')->andReturnSelf();
+        // Second tag (author) gets both keys in one ZADD
+        $pipeline->shouldReceive('zadd')
+            ->once()
+            ->with('prefix:tag:author:entries', $expectedScore, $namespace . 'name', $expectedScore, $namespace . 'age')
+            ->andReturnSelf();
+
+        // SETEX for each key
+        $pipeline->shouldReceive('setex')->once()->with("prefix:{$namespace}name", 5, serialize('Sally'))->andReturnSelf();
         $pipeline->shouldReceive('setex')->once()->with("prefix:{$namespace}age", 5, 30)->andReturnSelf();
 
-        $pipeline->shouldReceive('exec')->once()->andReturn([1, 1, true, 1, 1, true]);
+        // Results: 2 ZADDs + 2 SETEXs
+        $pipeline->shouldReceive('exec')->once()->andReturn([2, 2, true, true]);
 
         $store = $this->createStore($connection);
         $result = $store->tags(['people', 'author'])->put([

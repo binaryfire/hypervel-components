@@ -46,6 +46,9 @@ class PutMany
 
     /**
      * Execute using pipeline for standard Redis (non-cluster).
+     *
+     * Uses variadic ZADD to batch all cache keys into a single command per tag,
+     * reducing the total number of Redis commands from O(keys × tags) to O(tags + keys).
      */
     private function executePipeline(array $values, int $seconds, array $tagIds, string $namespace): bool
     {
@@ -54,18 +57,30 @@ class PutMany
             $score = now()->addSeconds($seconds)->getTimestamp();
             $ttl = max(1, $seconds);
 
-            $pipeline = $conn->multi(Redis::PIPELINE);
-
+            // Prepare all data upfront
+            $preparedEntries = [];
             foreach ($values as $key => $value) {
                 $namespacedKey = $namespace . $key;
-                $serialized = $this->serialization->serialize($value);
+                $preparedEntries[$namespacedKey] = $this->serialization->serialize($value);
+            }
 
-                // ZADD to each tag's sorted set for this key
-                foreach ($tagIds as $tagId) {
-                    $pipeline->zadd($prefix . $tagId, $score, $namespacedKey);
+            $namespacedKeys = array_keys($preparedEntries);
+
+            $pipeline = $conn->multi(Redis::PIPELINE);
+
+            // Batch ZADD: one command per tag with all cache keys as members
+            // ZADD format: key, score1, member1, score2, member2, ...
+            foreach ($tagIds as $tagId) {
+                $zaddArgs = [];
+                foreach ($namespacedKeys as $key) {
+                    $zaddArgs[] = $score;
+                    $zaddArgs[] = $key;
                 }
+                $pipeline->zadd($prefix . $tagId, ...$zaddArgs);
+            }
 
-                // SETEX for the cache value
+            // Then all SETEXs
+            foreach ($preparedEntries as $namespacedKey => $serialized) {
                 $pipeline->setex($prefix . $namespacedKey, $ttl, $serialized);
             }
 
@@ -77,6 +92,10 @@ class PutMany
 
     /**
      * Execute using sequential commands for Redis Cluster.
+     *
+     * Uses variadic ZADD to batch all cache keys into a single command per tag.
+     * This is safe in cluster mode because variadic ZADD targets ONE sorted set key,
+     * which resides in a single slot.
      */
     private function executeCluster(array $values, int $seconds, array $tagIds, string $namespace): bool
     {
@@ -86,18 +105,29 @@ class PutMany
             $score = now()->addSeconds($seconds)->getTimestamp();
             $ttl = max(1, $seconds);
 
-            $allSucceeded = true;
-
+            // Prepare all data upfront
+            $preparedEntries = [];
             foreach ($values as $key => $value) {
                 $namespacedKey = $namespace . $key;
-                $serialized = $this->serialization->serialize($value);
+                $preparedEntries[$namespacedKey] = $this->serialization->serialize($value);
+            }
 
-                // ZADD to each tag's sorted set for this key
-                foreach ($tagIds as $tagId) {
-                    $client->zadd($prefix . $tagId, $score, $namespacedKey);
+            $namespacedKeys = array_keys($preparedEntries);
+
+            // Batch ZADD: one command per tag with all cache keys as members
+            // Each tag's sorted set is in ONE slot, so variadic ZADD works in cluster
+            foreach ($tagIds as $tagId) {
+                $zaddArgs = [];
+                foreach ($namespacedKeys as $key) {
+                    $zaddArgs[] = $score;
+                    $zaddArgs[] = $key;
                 }
+                $client->zadd($prefix . $tagId, ...$zaddArgs);
+            }
 
-                // SETEX for the cache value
+            // Then all SETEXs
+            $allSucceeded = true;
+            foreach ($preparedEntries as $namespacedKey => $serialized) {
                 if (! $client->setex($prefix . $namespacedKey, $ttl, $serialized)) {
                     $allSucceeded = false;
                 }

@@ -4,15 +4,9 @@ declare(strict_types=1);
 
 namespace Hypervel\Tests\Cache\Redis;
 
-use Hyperf\Redis\Pool\PoolFactory;
-use Hyperf\Redis\Pool\RedisPool;
-use Hyperf\Redis\RedisFactory;
 use Hypervel\Cache\Redis\IntersectionTagSet;
-use Hypervel\Cache\RedisStore;
-use Hypervel\Redis\RedisConnection;
+use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
-use Mockery as m;
-use Mockery\MockInterface;
 
 /**
  * Tests for IntersectionTagSet class.
@@ -27,29 +21,19 @@ use Mockery\MockInterface;
  */
 class IntersectionTagSetTest extends TestCase
 {
-    private RedisStore $store;
-
-    private MockInterface|RedisConnection $connection;
-
-    /**
-     * Set up test fixtures.
-     */
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        $this->mockRedis();
-    }
+    use MocksRedisConnections;
 
     /**
      * @test
      */
     public function testFlushTagCallsResetTag(): void
     {
-        $tagSet = new IntersectionTagSet($this->store, ['users']);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $tagSet = new IntersectionTagSet($store, ['users']);
 
         // resetTag calls store->forget which uses del
-        $this->connection->shouldReceive('del')
+        $connection->shouldReceive('del')
             ->once()
             ->with('prefix:tag:users:entries')
             ->andReturn(1);
@@ -65,9 +49,11 @@ class IntersectionTagSetTest extends TestCase
      */
     public function testResetTagDeletesTagAndReturnsId(): void
     {
-        $tagSet = new IntersectionTagSet($this->store, ['users']);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $tagSet = new IntersectionTagSet($store, ['users']);
 
-        $this->connection->shouldReceive('del')
+        $connection->shouldReceive('del')
             ->once()
             ->with('prefix:tag:users:entries')
             ->andReturn(1);
@@ -82,7 +68,9 @@ class IntersectionTagSetTest extends TestCase
      */
     public function testTagIdReturnsCorrectFormat(): void
     {
-        $tagSet = new IntersectionTagSet($this->store, ['users']);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $tagSet = new IntersectionTagSet($store, ['users']);
 
         $this->assertSame('tag:users:entries', $tagSet->tagId('users'));
         $this->assertSame('tag:posts:entries', $tagSet->tagId('posts'));
@@ -93,7 +81,9 @@ class IntersectionTagSetTest extends TestCase
      */
     public function testTagKeyReturnsCorrectFormat(): void
     {
-        $tagSet = new IntersectionTagSet($this->store, ['users']);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $tagSet = new IntersectionTagSet($store, ['users']);
 
         // In IntersectionTagSet, tagKey and tagId return the same value
         $this->assertSame('tag:users:entries', $tagSet->tagKey('users'));
@@ -104,7 +94,9 @@ class IntersectionTagSetTest extends TestCase
      */
     public function testTagIdsReturnsArrayOfTagIdentifiers(): void
     {
-        $tagSet = new IntersectionTagSet($this->store, ['users', 'posts', 'comments']);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $tagSet = new IntersectionTagSet($store, ['users', 'posts', 'comments']);
 
         $tagIds = $tagSet->tagIds();
 
@@ -120,28 +112,10 @@ class IntersectionTagSetTest extends TestCase
      */
     public function testGetNamesReturnsOriginalTagNames(): void
     {
-        $tagSet = new IntersectionTagSet($this->store, ['users', 'posts']);
+        $connection = $this->mockConnection();
+        $store = $this->createStore($connection);
+        $tagSet = new IntersectionTagSet($store, ['users', 'posts']);
 
         $this->assertSame(['users', 'posts'], $tagSet->getNames());
-    }
-
-    /**
-     * Set up the Redis mocks.
-     */
-    private function mockRedis(): void
-    {
-        $this->connection = m::mock(RedisConnection::class);
-        $this->connection->shouldReceive('release')->zeroOrMoreTimes();
-        $this->connection->shouldReceive('serialized')->andReturn(false)->byDefault();
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($this->connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
-
-        $redisFactory = m::mock(RedisFactory::class);
-
-        $this->store = new RedisStore($redisFactory, 'prefix', 'default', $poolFactory);
     }
 }
