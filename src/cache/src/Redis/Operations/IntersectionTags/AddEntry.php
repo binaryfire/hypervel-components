@@ -6,7 +6,6 @@ namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
 
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
-use Redis;
 
 /**
  * Adds a cache key reference to intersection tag sorted sets.
@@ -63,8 +62,9 @@ class AddEntry
     private function executePipeline(string $key, int $score, array $tagIds, ?string $updateWhen): void
     {
         $this->context->withConnection(function (RedisConnection $conn) use ($key, $score, $tagIds, $updateWhen) {
+            $client = $conn->client();
             $prefix = $this->context->prefix();
-            $pipeline = $conn->multi(Redis::PIPELINE);
+            $pipeline = $client->pipeline();
 
             foreach ($tagIds as $tagId) {
                 $prefixedTagKey = $prefix . $tagId;

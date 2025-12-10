@@ -11,6 +11,7 @@ use Hypervel\Cache\Redis\Operations\UnionTags\Forever;
 use Hypervel\Cache\Redis\Operations\UnionTags\GetTaggedKeys;
 use Hypervel\Cache\Redis\Operations\UnionTags\GetTagItems;
 use Hypervel\Cache\Redis\Operations\UnionTags\Increment;
+use Hypervel\Cache\Redis\Operations\UnionTags\Prune;
 use Hypervel\Cache\Redis\Operations\UnionTags\Put;
 use Hypervel\Cache\Redis\Operations\UnionTags\PutMany;
 use Hypervel\Cache\Redis\Support\Serialization;
@@ -43,6 +44,8 @@ class UnionTagOperations
     private ?GetTagItems $getTagItems = null;
 
     private ?Flush $flush = null;
+
+    private ?Prune $prune = null;
 
     public function __construct(
         private readonly StoreContext $context,
@@ -126,6 +129,17 @@ class UnionTagOperations
     }
 
     /**
+     * Get the Prune operation for removing orphaned fields from tag hashes.
+     *
+     * This removes expired tags from the registry, scans active tag hashes
+     * for fields referencing deleted cache keys, and deletes empty hashes.
+     */
+    public function prune(): Prune
+    {
+        return $this->prune ??= new Prune($this->context);
+    }
+
+    /**
      * Clear all cached operation instances.
      *
      * Called when the store's connection or prefix changes.
@@ -141,5 +155,6 @@ class UnionTagOperations
         $this->getTaggedKeys = null;
         $this->getTagItems = null;
         $this->flush = null;
+        $this->prune = null;
     }
 }

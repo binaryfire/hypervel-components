@@ -7,7 +7,6 @@ namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
-use Redis;
 
 /**
  * Store an item in the cache indefinitely with intersection tag tracking.
@@ -50,10 +49,11 @@ class Forever
     private function executePipeline(string $key, mixed $value, array $tagIds): bool
     {
         return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $tagIds) {
+            $client = $conn->client();
             $prefix = $this->context->prefix();
             $serialized = $this->serialization->serialize($value);
 
-            $pipeline = $conn->multi(Redis::PIPELINE);
+            $pipeline = $client->pipeline();
 
             // ZADD to each tag's sorted set with score -1 (forever)
             foreach ($tagIds as $tagId) {

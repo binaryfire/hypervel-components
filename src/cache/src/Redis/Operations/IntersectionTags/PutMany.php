@@ -7,7 +7,6 @@ namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
-use Redis;
 
 /**
  * Store multiple items in the cache with intersection tag tracking.
@@ -53,6 +52,7 @@ class PutMany
     private function executePipeline(array $values, int $seconds, array $tagIds, string $namespace): bool
     {
         return $this->context->withConnection(function (RedisConnection $conn) use ($values, $seconds, $tagIds, $namespace) {
+            $client = $conn->client();
             $prefix = $this->context->prefix();
             $score = now()->addSeconds($seconds)->getTimestamp();
             $ttl = max(1, $seconds);
@@ -66,7 +66,7 @@ class PutMany
 
             $namespacedKeys = array_keys($preparedEntries);
 
-            $pipeline = $conn->multi(Redis::PIPELINE);
+            $pipeline = $client->pipeline();
 
             // Batch ZADD: one command per tag with all cache keys as members
             // ZADD format: key, score1, member1, score2, member2, ...

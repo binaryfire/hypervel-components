@@ -12,6 +12,7 @@ use Hypervel\Cache\Redis\Operations\IntersectionTags\FlushStaleEntries;
 use Hypervel\Cache\Redis\Operations\IntersectionTags\Forever;
 use Hypervel\Cache\Redis\Operations\IntersectionTags\GetEntries;
 use Hypervel\Cache\Redis\Operations\IntersectionTags\Increment;
+use Hypervel\Cache\Redis\Operations\IntersectionTags\Prune;
 use Hypervel\Cache\Redis\Operations\IntersectionTags\Put;
 use Hypervel\Cache\Redis\Operations\IntersectionTags\PutMany;
 use Hypervel\Cache\Redis\Support\Serialization;
@@ -48,6 +49,8 @@ class IntersectionTagOperations
     private ?FlushStaleEntries $flushStaleEntries = null;
 
     private ?Flush $flush = null;
+
+    private ?Prune $prune = null;
 
     public function __construct(
         private readonly StoreContext $context,
@@ -137,6 +140,17 @@ class IntersectionTagOperations
     }
 
     /**
+     * Get the Prune operation for removing stale entries from all tag sorted sets.
+     *
+     * This discovers all tag:*:entries keys via SCAN and removes entries
+     * with expired TTL scores, then deletes empty sorted sets.
+     */
+    public function prune(): Prune
+    {
+        return $this->prune ??= new Prune($this->context);
+    }
+
+    /**
      * Clear all cached operation instances.
      *
      * Called when the store's connection or prefix changes.
@@ -153,5 +167,6 @@ class IntersectionTagOperations
         $this->getEntries = null;
         $this->flushStaleEntries = null;
         $this->flush = null;
+        $this->prune = null;
     }
 }

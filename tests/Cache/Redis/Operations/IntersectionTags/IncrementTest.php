@@ -31,26 +31,23 @@ class IncrementTest extends TestCase
     public function testIncrementWithTagsInPipelineMode(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         // ZADD NX for tag with score -1 (only add if not exists)
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', ['NX'], -1, 'counter')
-            ->andReturnSelf();
+            ->andReturn($client);
 
         // INCRBY
-        $pipeline->shouldReceive('incrby')
+        $client->shouldReceive('incrby')
             ->once()
             ->with('prefix:counter', 1)
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1, 5]);
 
@@ -70,24 +67,21 @@ class IncrementTest extends TestCase
     public function testIncrementWithCustomValue(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', ['NX'], -1, 'counter')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('incrby')
+        $client->shouldReceive('incrby')
             ->once()
             ->with('prefix:counter', 10)
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([0, 15]);  // 0 means key already existed (NX condition)
 
@@ -107,29 +101,26 @@ class IncrementTest extends TestCase
     public function testIncrementWithMultipleTags(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         // ZADD NX for each tag
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', ['NX'], -1, 'counter')
-            ->andReturnSelf();
-        $pipeline->shouldReceive('zadd')
+            ->andReturn($client);
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:posts:entries', ['NX'], -1, 'counter')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('incrby')
+        $client->shouldReceive('incrby')
             ->once()
             ->with('prefix:counter', 1)
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1, 1, 1]);
 
@@ -149,20 +140,17 @@ class IncrementTest extends TestCase
     public function testIncrementWithEmptyTags(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         // No ZADD calls expected
-        $pipeline->shouldReceive('incrby')
+        $client->shouldReceive('incrby')
             ->once()
             ->with('prefix:counter', 1)
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1]);
 
@@ -201,7 +189,7 @@ class IncrementTest extends TestCase
         $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
 
         // Should NOT use pipeline in cluster mode
-        $connection->shouldNotReceive('multi');
+        $clusterClient->shouldNotReceive('pipeline');
 
         // Sequential ZADD NX
         $clusterClient->shouldReceive('zadd')
@@ -237,17 +225,14 @@ class IncrementTest extends TestCase
     public function testIncrementReturnsFalseOnPipelineFailure(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')->andReturnSelf();
-        $pipeline->shouldReceive('incrby')->andReturnSelf();
+        $client->shouldReceive('zadd')->andReturn($client);
+        $client->shouldReceive('incrby')->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn(false);
 

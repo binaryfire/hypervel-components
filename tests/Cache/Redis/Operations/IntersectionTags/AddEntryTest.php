@@ -35,19 +35,16 @@ class AddEntryTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', now()->timestamp + 300, 'mykey')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1]);
 
@@ -63,19 +60,16 @@ class AddEntryTest extends TestCase
     public function testAddEntryWithZeroTtlStoresNegativeOne(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', -1, 'mykey')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1]);
 
@@ -91,19 +85,16 @@ class AddEntryTest extends TestCase
     public function testAddEntryWithNegativeTtlStoresNegativeOne(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', -1, 'mykey')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1]);
 
@@ -119,19 +110,16 @@ class AddEntryTest extends TestCase
     public function testAddEntryWithUpdateWhenNxCondition(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', ['NX'], -1, 'mykey')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1]);
 
@@ -147,19 +135,16 @@ class AddEntryTest extends TestCase
     public function testAddEntryWithUpdateWhenXxCondition(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', ['XX'], -1, 'mykey')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1]);
 
@@ -177,19 +162,16 @@ class AddEntryTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', ['GT'], now()->timestamp + 60, 'mykey')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1]);
 
@@ -207,24 +189,20 @@ class AddEntryTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        // Should use pipeline for multiple tags
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', now()->timestamp + 60, 'mykey')
-            ->andReturnSelf();
-        $pipeline->shouldReceive('zadd')
+            ->andReturn($client);
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:posts:entries', now()->timestamp + 60, 'mykey')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1, 1]);
 
@@ -240,9 +218,11 @@ class AddEntryTest extends TestCase
     public function testAddEntryWithEmptyTagsArrayDoesNothing(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
         // No pipeline or zadd calls should be made
-        $connection->shouldNotReceive('multi');
-        $connection->shouldNotReceive('zadd');
+        $client->shouldNotReceive('pipeline');
+        $client->shouldNotReceive('zadd');
 
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
@@ -256,19 +236,16 @@ class AddEntryTest extends TestCase
     public function testAddEntryUsesCorrectPrefix(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('custom_prefix:tag:users:entries', -1, 'mykey')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1]);
 
@@ -305,7 +282,7 @@ class AddEntryTest extends TestCase
         $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
 
         // Should NOT use pipeline in cluster mode
-        $connection->shouldNotReceive('multi');
+        $clusterClient->shouldNotReceive('pipeline');
 
         // Should use sequential zadd calls directly on client
         $clusterClient->shouldReceive('zadd')
@@ -351,7 +328,7 @@ class AddEntryTest extends TestCase
         $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
 
         // Should NOT use pipeline in cluster mode
-        $connection->shouldNotReceive('multi');
+        $clusterClient->shouldNotReceive('pipeline');
 
         // Should use sequential zadd calls for each tag
         $expectedScore = now()->timestamp + 60;

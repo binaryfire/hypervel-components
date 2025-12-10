@@ -7,7 +7,6 @@ namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
-use Redis;
 
 /**
  * Store an item in the cache if it doesn't exist, with intersection tag tracking.
@@ -60,7 +59,7 @@ class Add
 
             // Pipeline the ZADD operations for tag tracking
             if (! empty($tagIds)) {
-                $pipeline = $conn->multi(Redis::PIPELINE);
+                $pipeline = $client->pipeline();
 
                 foreach ($tagIds as $tagId) {
                     $pipeline->zadd($prefix . $tagId, $score, $key);

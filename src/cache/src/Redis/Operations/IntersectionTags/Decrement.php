@@ -6,7 +6,6 @@ namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
 
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
-use Redis;
 
 /**
  * Decrement a value in the cache with intersection tag tracking.
@@ -51,9 +50,10 @@ class Decrement
     private function executePipeline(string $key, int $value, array $tagIds): int|false
     {
         return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $tagIds) {
+            $client = $conn->client();
             $prefix = $this->context->prefix();
 
-            $pipeline = $conn->multi(Redis::PIPELINE);
+            $pipeline = $client->pipeline();
 
             // ZADD NX to each tag's sorted set (only add if not exists)
             foreach ($tagIds as $tagId) {

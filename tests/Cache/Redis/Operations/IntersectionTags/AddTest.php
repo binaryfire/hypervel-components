@@ -38,20 +38,16 @@ class AddTest extends TestCase
 
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
-        $pipeline = m::mock();
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         // ZADD for tag with TTL score
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', now()->timestamp + 60, 'mykey')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1]);
 
@@ -81,15 +77,11 @@ class AddTest extends TestCase
 
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
-        $pipeline = m::mock();
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')->andReturnSelf();
-        $pipeline->shouldReceive('exec')->andReturn([1]);
+        $client->shouldReceive('zadd')->andReturn($client);
+        $client->shouldReceive('exec')->andReturn([1]);
 
         // SET NX returns null/false when key already exists
         $client->shouldReceive('set')
@@ -117,26 +109,22 @@ class AddTest extends TestCase
 
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
-        $pipeline = m::mock();
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $expectedScore = now()->timestamp + 120;
 
         // ZADD for each tag
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', $expectedScore, 'mykey')
-            ->andReturnSelf();
-        $pipeline->shouldReceive('zadd')
+            ->andReturn($client);
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:posts:entries', $expectedScore, 'mykey')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1, 1]);
 
@@ -166,7 +154,7 @@ class AddTest extends TestCase
         $client = $connection->_mockClient;
 
         // No pipeline operations for empty tags
-        $connection->shouldNotReceive('multi');
+        $client->shouldNotReceive('pipeline');
 
         // Only SET NX EX for add
         $client->shouldReceive('set')
@@ -212,7 +200,7 @@ class AddTest extends TestCase
         $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
 
         // Should NOT use pipeline in cluster mode
-        $connection->shouldNotReceive('multi');
+        $clusterClient->shouldNotReceive('pipeline');
 
         // Sequential ZADD
         $clusterClient->shouldReceive('zadd')
@@ -307,7 +295,7 @@ class AddTest extends TestCase
         $client = $connection->_mockClient;
 
         // No pipeline for empty tags
-        $connection->shouldNotReceive('multi');
+        $client->shouldNotReceive('pipeline');
 
         // TTL should be at least 1
         $client->shouldReceive('set')
@@ -335,15 +323,11 @@ class AddTest extends TestCase
 
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
-        $pipeline = m::mock();
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')->andReturnSelf();
-        $pipeline->shouldReceive('exec')->andReturn([1]);
+        $client->shouldReceive('zadd')->andReturn($client);
+        $client->shouldReceive('exec')->andReturn([1]);
 
         // Numeric values are NOT serialized (optimization)
         $client->shouldReceive('set')

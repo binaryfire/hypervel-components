@@ -34,35 +34,32 @@ class PutManyTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $expectedScore = now()->timestamp + 60;
 
         // Variadic ZADD: one command with all members for the tag
         // Format: key, score1, member1, score2, member2, ...
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', $expectedScore, 'ns:foo', $expectedScore, 'ns:baz')
-            ->andReturnSelf();
+            ->andReturn($client);
 
         // SETEX for each key
-        $pipeline->shouldReceive('setex')
+        $client->shouldReceive('setex')
             ->once()
             ->with('prefix:ns:foo', 60, serialize('bar'))
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('setex')
+        $client->shouldReceive('setex')
             ->once()
             ->with('prefix:ns:baz', 60, serialize('qux'))
-            ->andReturnSelf();
+            ->andReturn($client);
 
         // Results: 1 ZADD (returns count of new members) + 2 SETEX (return true)
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([2, true, true]);
 
@@ -85,32 +82,29 @@ class PutManyTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $expectedScore = now()->timestamp + 120;
 
         // Variadic ZADD for each tag (one command per tag, all keys as members)
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', $expectedScore, 'ns:foo')
-            ->andReturnSelf();
-        $pipeline->shouldReceive('zadd')
+            ->andReturn($client);
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:posts:entries', $expectedScore, 'ns:foo')
-            ->andReturnSelf();
+            ->andReturn($client);
 
         // SETEX for the key
-        $pipeline->shouldReceive('setex')
+        $client->shouldReceive('setex')
             ->once()
             ->with('prefix:ns:foo', 120, serialize('bar'))
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1, 1, true]);
 
@@ -131,20 +125,17 @@ class PutManyTest extends TestCase
     public function testPutManyWithEmptyTags(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         // Only SETEX, no ZADD
-        $pipeline->shouldReceive('setex')
+        $client->shouldReceive('setex')
             ->once()
             ->with('prefix:ns:foo', 60, serialize('bar'))
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([true]);
 
@@ -165,9 +156,10 @@ class PutManyTest extends TestCase
     public function testPutManyWithEmptyValuesReturnsTrue(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
         // No pipeline operations for empty values
-        $connection->shouldNotReceive('multi');
+        $client->shouldNotReceive('pipeline');
 
         $store = $this->createStore($connection);
         $result = $store->intersectionTagOps()->putMany()->execute(
@@ -207,7 +199,7 @@ class PutManyTest extends TestCase
         $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
 
         // Should NOT use pipeline in cluster mode
-        $connection->shouldNotReceive('multi');
+        $clusterClient->shouldNotReceive('pipeline');
 
         $expectedScore = now()->timestamp + 60;
 
@@ -252,18 +244,15 @@ class PutManyTest extends TestCase
     public function testPutManyReturnsFalseOnFailure(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')->andReturnSelf();
-        $pipeline->shouldReceive('setex')->andReturnSelf();
+        $client->shouldReceive('zadd')->andReturn($client);
+        $client->shouldReceive('setex')->andReturn($client);
 
         // One SETEX fails
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1, true, 1, false]);
 
@@ -284,18 +273,15 @@ class PutManyTest extends TestCase
     public function testPutManyReturnsFalseOnPipelineFailure(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')->andReturnSelf();
-        $pipeline->shouldReceive('setex')->andReturnSelf();
+        $client->shouldReceive('zadd')->andReturn($client);
+        $client->shouldReceive('setex')->andReturn($client);
 
         // Pipeline fails entirely
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn(false);
 
@@ -316,22 +302,19 @@ class PutManyTest extends TestCase
     public function testPutManyEnforcesMinimumTtlOfOne(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')->andReturnSelf();
+        $client->shouldReceive('zadd')->andReturn($client);
 
         // TTL should be at least 1
-        $pipeline->shouldReceive('setex')
+        $client->shouldReceive('setex')
             ->once()
             ->with('prefix:ns:foo', 1, serialize('bar'))
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1, true]);
 
@@ -354,22 +337,19 @@ class PutManyTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')->andReturnSelf();
+        $client->shouldReceive('zadd')->andReturn($client);
 
         // Numeric values are NOT serialized (optimization)
-        $pipeline->shouldReceive('setex')
+        $client->shouldReceive('setex')
             ->once()
             ->with('prefix:ns:count', 60, 42)
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1, true]);
 
@@ -392,27 +372,24 @@ class PutManyTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $expectedScore = now()->timestamp + 30;
 
         // Custom prefix should be used
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('custom:tag:users:entries', $expectedScore, 'ns:foo')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('setex')
+        $client->shouldReceive('setex')
             ->once()
             ->with('custom:ns:foo', 30, serialize('bar'))
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1, true]);
 
@@ -439,45 +416,42 @@ class PutManyTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $expectedScore = now()->timestamp + 60;
 
         // Variadic ZADD for first tag with all keys
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', $expectedScore, 'ns:a', $expectedScore, 'ns:b', $expectedScore, 'ns:c')
-            ->andReturnSelf();
+            ->andReturn($client);
 
         // Variadic ZADD for second tag with all keys
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:posts:entries', $expectedScore, 'ns:a', $expectedScore, 'ns:b', $expectedScore, 'ns:c')
-            ->andReturnSelf();
+            ->andReturn($client);
 
         // SETEX for each key
-        $pipeline->shouldReceive('setex')
+        $client->shouldReceive('setex')
             ->once()
             ->with('prefix:ns:a', 60, serialize('val-a'))
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('setex')
+        $client->shouldReceive('setex')
             ->once()
             ->with('prefix:ns:b', 60, serialize('val-b'))
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('setex')
+        $client->shouldReceive('setex')
             ->once()
             ->with('prefix:ns:c', 60, serialize('val-c'))
-            ->andReturnSelf();
+            ->andReturn($client);
 
         // Results: 2 ZADDs + 3 SETEXs
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([3, 3, true, true, true]);
 

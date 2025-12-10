@@ -29,19 +29,17 @@ class IntersectionTaggedCacheTest extends TestCase
     public function testTagEntriesCanBeStoredForever(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':name';
 
         // Combined operation: ZADD for both tags + SET (forever uses score -1)
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturnSelf();
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturnSelf();
-        $pipeline->shouldReceive('set')->once()->with("prefix:{$key}", serialize('Sally'))->andReturnSelf();
-        $pipeline->shouldReceive('exec')->once()->andReturn([1, 1, true]);
+        $client->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturn($client);
+        $client->shouldReceive('set')->once()->with("prefix:{$key}", serialize('Sally'))->andReturn($client);
+        $client->shouldReceive('exec')->once()->andReturn([1, 1, true]);
 
         $store = $this->createStore($connection);
         $result = $store->tags(['people', 'author'])->forever('name', 'Sally');
@@ -55,19 +53,17 @@ class IntersectionTaggedCacheTest extends TestCase
     public function testTagEntriesCanBeStoredForeverWithNumericValue(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':age';
 
         // Numeric values are NOT serialized (optimization)
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturnSelf();
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturnSelf();
-        $pipeline->shouldReceive('set')->once()->with("prefix:{$key}", 30)->andReturnSelf();
-        $pipeline->shouldReceive('exec')->once()->andReturn([1, 1, true]);
+        $client->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturn($client);
+        $client->shouldReceive('set')->once()->with("prefix:{$key}", 30)->andReturn($client);
+        $client->shouldReceive('exec')->once()->andReturn([1, 1, true]);
 
         $store = $this->createStore($connection);
         $result = $store->tags(['people', 'author'])->forever('age', 30);
@@ -81,18 +77,16 @@ class IntersectionTaggedCacheTest extends TestCase
     public function testTagEntriesCanBeIncremented(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $key = sha1('tag:votes:entries') . ':person-1';
 
         // Combined operation: ZADD NX + INCRBY in single pipeline
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:votes:entries', ['NX'], -1, $key)->andReturnSelf();
-        $pipeline->shouldReceive('incrby')->once()->with("prefix:{$key}", 1)->andReturnSelf();
-        $pipeline->shouldReceive('exec')->once()->andReturn([1, 1]);
+        $client->shouldReceive('zadd')->once()->with('prefix:tag:votes:entries', ['NX'], -1, $key)->andReturn($client);
+        $client->shouldReceive('incrby')->once()->with("prefix:{$key}", 1)->andReturn($client);
+        $client->shouldReceive('exec')->once()->andReturn([1, 1]);
 
         $store = $this->createStore($connection);
         $result = $store->tags(['votes'])->increment('person-1');
@@ -106,18 +100,16 @@ class IntersectionTaggedCacheTest extends TestCase
     public function testTagEntriesCanBeDecremented(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $key = sha1('tag:votes:entries') . ':person-1';
 
         // Combined operation: ZADD NX + DECRBY in single pipeline
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:votes:entries', ['NX'], -1, $key)->andReturnSelf();
-        $pipeline->shouldReceive('decrby')->once()->with("prefix:{$key}", 1)->andReturnSelf();
-        $pipeline->shouldReceive('exec')->once()->andReturn([1, 9]);
+        $client->shouldReceive('zadd')->once()->with('prefix:tag:votes:entries', ['NX'], -1, $key)->andReturn($client);
+        $client->shouldReceive('decrby')->once()->with("prefix:{$key}", 1)->andReturn($client);
+        $client->shouldReceive('exec')->once()->andReturn([1, 9]);
 
         $store = $this->createStore($connection);
         $result = $store->tags(['votes'])->decrement('person-1');
@@ -133,18 +125,16 @@ class IntersectionTaggedCacheTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         // FlushStaleEntries uses pipeline for zRemRangeByScore
-        $pipeline->shouldReceive('zRemRangeByScore')
+        $client->shouldReceive('zRemRangeByScore')
             ->once()
             ->with('prefix:tag:people:entries', '0', (string) now()->timestamp)
-            ->andReturnSelf();
-        $pipeline->shouldReceive('exec')->once()->andReturn([0]);
+            ->andReturn($client);
+        $client->shouldReceive('exec')->once()->andReturn([0]);
 
         $store = $this->createStore($connection);
         $store->tags(['people'])->flushStale();
@@ -158,20 +148,18 @@ class IntersectionTaggedCacheTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':name';
         $expectedScore = now()->timestamp + 5;
 
         // Combined operation: ZADD for both tags + SETEX in single pipeline
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', $expectedScore, $key)->andReturnSelf();
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', $expectedScore, $key)->andReturnSelf();
-        $pipeline->shouldReceive('setex')->once()->with("prefix:{$key}", 5, serialize('Sally'))->andReturnSelf();
-        $pipeline->shouldReceive('exec')->once()->andReturn([1, 1, true]);
+        $client->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', $expectedScore, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', $expectedScore, $key)->andReturn($client);
+        $client->shouldReceive('setex')->once()->with("prefix:{$key}", 5, serialize('Sally'))->andReturn($client);
+        $client->shouldReceive('exec')->once()->andReturn([1, 1, true]);
 
         $store = $this->createStore($connection);
         $result = $store->tags(['people', 'author'])->put('name', 'Sally', 5);
@@ -187,20 +175,18 @@ class IntersectionTaggedCacheTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $key = sha1('tag:people:entries|tag:author:entries') . ':age';
         $expectedScore = now()->timestamp + 5;
 
         // Numeric values are NOT serialized
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', $expectedScore, $key)->andReturnSelf();
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', $expectedScore, $key)->andReturnSelf();
-        $pipeline->shouldReceive('setex')->once()->with("prefix:{$key}", 5, 30)->andReturnSelf();
-        $pipeline->shouldReceive('exec')->once()->andReturn([1, 1, true]);
+        $client->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', $expectedScore, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', $expectedScore, $key)->andReturn($client);
+        $client->shouldReceive('setex')->once()->with("prefix:{$key}", 5, 30)->andReturn($client);
+        $client->shouldReceive('exec')->once()->andReturn([1, 1, true]);
 
         $store = $this->createStore($connection);
         $result = $store->tags(['people', 'author'])->put('age', 30, 5);
@@ -216,34 +202,32 @@ class IntersectionTaggedCacheTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $namespace = sha1('tag:people:entries|tag:author:entries') . ':';
         $expectedScore = now()->timestamp + 5;
 
         // PutMany uses variadic ZADD: one command per tag with all keys as members
         // First tag (people) gets both keys in one ZADD
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:people:entries', $expectedScore, $namespace . 'name', $expectedScore, $namespace . 'age')
-            ->andReturnSelf();
+            ->andReturn($client);
 
         // Second tag (author) gets both keys in one ZADD
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:author:entries', $expectedScore, $namespace . 'name', $expectedScore, $namespace . 'age')
-            ->andReturnSelf();
+            ->andReturn($client);
 
         // SETEX for each key
-        $pipeline->shouldReceive('setex')->once()->with("prefix:{$namespace}name", 5, serialize('Sally'))->andReturnSelf();
-        $pipeline->shouldReceive('setex')->once()->with("prefix:{$namespace}age", 5, 30)->andReturnSelf();
+        $client->shouldReceive('setex')->once()->with("prefix:{$namespace}name", 5, serialize('Sally'))->andReturn($client);
+        $client->shouldReceive('setex')->once()->with("prefix:{$namespace}age", 5, 30)->andReturn($client);
 
         // Results: 2 ZADDs + 2 SETEXs
-        $pipeline->shouldReceive('exec')->once()->andReturn([2, 2, true, true]);
+        $client->shouldReceive('exec')->once()->andReturn([2, 2, true, true]);
 
         $store = $this->createStore($connection);
         $result = $store->tags(['people', 'author'])->put([
@@ -299,18 +283,16 @@ class IntersectionTaggedCacheTest extends TestCase
     public function testPutNullTtlCallsForever(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $key = sha1('tag:users:entries') . ':name';
 
         // Null TTL should call forever (ZADD with -1 + SET)
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:users:entries', -1, $key)->andReturnSelf();
-        $pipeline->shouldReceive('set')->once()->with("prefix:{$key}", serialize('John'))->andReturnSelf();
-        $pipeline->shouldReceive('exec')->once()->andReturn([1, true]);
+        $client->shouldReceive('zadd')->once()->with('prefix:tag:users:entries', -1, $key)->andReturn($client);
+        $client->shouldReceive('set')->once()->with("prefix:{$key}", serialize('John'))->andReturn($client);
+        $client->shouldReceive('exec')->once()->andReturn([1, true]);
 
         $store = $this->createStore($connection);
         $result = $store->tags(['users'])->put('name', 'John', null);
@@ -345,17 +327,15 @@ class IntersectionTaggedCacheTest extends TestCase
     public function testIncrementWithCustomValue(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $key = sha1('tag:counters:entries') . ':hits';
 
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:counters:entries', ['NX'], -1, $key)->andReturnSelf();
-        $pipeline->shouldReceive('incrby')->once()->with("prefix:{$key}", 5)->andReturnSelf();
-        $pipeline->shouldReceive('exec')->once()->andReturn([1, 15]);
+        $client->shouldReceive('zadd')->once()->with('prefix:tag:counters:entries', ['NX'], -1, $key)->andReturn($client);
+        $client->shouldReceive('incrby')->once()->with("prefix:{$key}", 5)->andReturn($client);
+        $client->shouldReceive('exec')->once()->andReturn([1, 15]);
 
         $store = $this->createStore($connection);
         $result = $store->tags(['counters'])->increment('hits', 5);
@@ -369,17 +349,15 @@ class IntersectionTaggedCacheTest extends TestCase
     public function testDecrementWithCustomValue(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $key = sha1('tag:counters:entries') . ':stock';
 
-        $pipeline->shouldReceive('zadd')->once()->with('prefix:tag:counters:entries', ['NX'], -1, $key)->andReturnSelf();
-        $pipeline->shouldReceive('decrby')->once()->with("prefix:{$key}", 3)->andReturnSelf();
-        $pipeline->shouldReceive('exec')->once()->andReturn([0, 7]);
+        $client->shouldReceive('zadd')->once()->with('prefix:tag:counters:entries', ['NX'], -1, $key)->andReturn($client);
+        $client->shouldReceive('decrby')->once()->with("prefix:{$key}", 3)->andReturn($client);
+        $client->shouldReceive('exec')->once()->andReturn([0, 7]);
 
         $store = $this->createStore($connection);
         $result = $store->tags(['counters'])->decrement('stock', 3);

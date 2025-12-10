@@ -31,26 +31,23 @@ class ForeverTest extends TestCase
     public function testForeverStoresValueWithTagsInPipelineMode(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         // ZADD for tag with score -1 (forever)
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', -1, 'mykey')
-            ->andReturnSelf();
+            ->andReturn($client);
 
         // SET for cache value (no expiration)
-        $pipeline->shouldReceive('set')
+        $client->shouldReceive('set')
             ->once()
             ->with('prefix:mykey', serialize('myvalue'))
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1, true]);
 
@@ -70,30 +67,27 @@ class ForeverTest extends TestCase
     public function testForeverWithMultipleTags(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         // ZADD for each tag with score -1
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:users:entries', -1, 'mykey')
-            ->andReturnSelf();
-        $pipeline->shouldReceive('zadd')
+            ->andReturn($client);
+        $client->shouldReceive('zadd')
             ->once()
             ->with('prefix:tag:posts:entries', -1, 'mykey')
-            ->andReturnSelf();
+            ->andReturn($client);
 
         // SET for cache value
-        $pipeline->shouldReceive('set')
+        $client->shouldReceive('set')
             ->once()
             ->with('prefix:mykey', serialize('myvalue'))
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1, 1, true]);
 
@@ -113,20 +107,17 @@ class ForeverTest extends TestCase
     public function testForeverWithEmptyTags(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         // SET for cache value only
-        $pipeline->shouldReceive('set')
+        $client->shouldReceive('set')
             ->once()
             ->with('prefix:mykey', serialize('myvalue'))
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([true]);
 
@@ -165,7 +156,7 @@ class ForeverTest extends TestCase
         $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
 
         // Should NOT use pipeline in cluster mode
-        $connection->shouldNotReceive('multi');
+        $clusterClient->shouldNotReceive('pipeline');
 
         // Sequential ZADD with score -1
         $clusterClient->shouldReceive('zadd')
@@ -201,18 +192,15 @@ class ForeverTest extends TestCase
     public function testForeverReturnsFalseOnFailure(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')->andReturnSelf();
-        $pipeline->shouldReceive('set')->andReturnSelf();
+        $client->shouldReceive('zadd')->andReturn($client);
+        $client->shouldReceive('set')->andReturn($client);
 
         // SET returns false (failure)
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1, false]);
 
@@ -232,24 +220,21 @@ class ForeverTest extends TestCase
     public function testForeverUsesCorrectPrefix(): void
     {
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $pipeline->shouldReceive('zadd')
+        $client->shouldReceive('zadd')
             ->once()
             ->with('custom:tag:users:entries', -1, 'mykey')
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('set')
+        $client->shouldReceive('set')
             ->once()
             ->with('custom:mykey', serialize('myvalue'))
-            ->andReturnSelf();
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
+        $client->shouldReceive('exec')
             ->once()
             ->andReturn([1, true]);
 

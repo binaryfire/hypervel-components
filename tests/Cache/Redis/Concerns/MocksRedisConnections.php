@@ -46,6 +46,10 @@ trait MocksRedisConnections
             ->andReturn('')
             ->byDefault();
 
+        // Default pipeline() returns self for chaining (can be overridden in tests)
+        $client->shouldReceive('pipeline')->andReturn($client)->byDefault();
+        $client->shouldReceive('exec')->andReturn([])->byDefault();
+
         $connection = m::mock(RedisConnection::class);
         $connection->shouldReceive('release')->zeroOrMoreTimes();
         $connection->shouldReceive('serialized')->andReturn(false)->byDefault();

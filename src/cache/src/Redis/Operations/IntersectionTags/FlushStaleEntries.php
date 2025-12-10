@@ -6,7 +6,6 @@ namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
 
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
-use Redis;
 
 /**
  * Flushes stale entries from intersection tag sorted sets.
@@ -56,9 +55,11 @@ class FlushStaleEntries
     private function executePipeline(array $tagIds): void
     {
         $this->context->withConnection(function (RedisConnection $conn) use ($tagIds) {
-            $pipeline = $conn->multi(Redis::PIPELINE);
+            $client = $conn->client();
             $prefix = $this->context->prefix();
             $timestamp = (string) now()->getTimestamp();
+
+            $pipeline = $client->pipeline();
 
             foreach ($tagIds as $tagId) {
                 $pipeline->zRemRangeByScore(

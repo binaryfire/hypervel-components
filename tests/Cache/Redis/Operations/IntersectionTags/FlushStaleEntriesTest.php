@@ -35,19 +35,16 @@ class FlushStaleEntriesTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
+
+        $client->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+            ->with('prefix:tag:users:entries', '0', (string) now()->getTimestamp())
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('zRemRangeByScore')
-            ->once()
-            ->with('prefix:tag:users:entries', '0', (string) now()->getTimestamp());
-
-        $pipeline->shouldReceive('exec')
-            ->once();
+        $client->shouldReceive('exec')->once();
 
         $store = $this->createStore($connection);
         $operation = new FlushStaleEntries($store->getContext());
@@ -63,26 +60,25 @@ class FlushStaleEntriesTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         // All tags should be processed in a single pipeline
-        $pipeline->shouldReceive('zRemRangeByScore')
+        $client->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with('prefix:tag:users:entries', '0', (string) now()->getTimestamp());
-        $pipeline->shouldReceive('zRemRangeByScore')
+            ->with('prefix:tag:users:entries', '0', (string) now()->getTimestamp())
+            ->andReturn($client);
+        $client->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with('prefix:tag:posts:entries', '0', (string) now()->getTimestamp());
-        $pipeline->shouldReceive('zRemRangeByScore')
+            ->with('prefix:tag:posts:entries', '0', (string) now()->getTimestamp())
+            ->andReturn($client);
+        $client->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with('prefix:tag:comments:entries', '0', (string) now()->getTimestamp());
+            ->with('prefix:tag:comments:entries', '0', (string) now()->getTimestamp())
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
-            ->once();
+        $client->shouldReceive('exec')->once();
 
         $store = $this->createStore($connection);
         $operation = new FlushStaleEntries($store->getContext());
@@ -96,9 +92,10 @@ class FlushStaleEntriesTest extends TestCase
     public function testFlushStaleEntriesWithEmptyTagIdsReturnsEarly(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
         // Should NOT create pipeline or execute any commands for empty array
-        $connection->shouldNotReceive('multi');
+        $client->shouldNotReceive('pipeline');
 
         $store = $this->createStore($connection);
         $operation = new FlushStaleEntries($store->getContext());
@@ -114,19 +111,16 @@ class FlushStaleEntriesTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
+
+        $client->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+            ->with('custom_prefix:tag:users:entries', '0', (string) now()->getTimestamp())
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('zRemRangeByScore')
-            ->once()
-            ->with('custom_prefix:tag:users:entries', '0', (string) now()->getTimestamp());
-
-        $pipeline->shouldReceive('exec')
-            ->once();
+        $client->shouldReceive('exec')->once();
 
         $store = $this->createStore($connection, 'custom_prefix');
         $operation = new FlushStaleEntries($store->getContext());
@@ -144,21 +138,18 @@ class FlushStaleEntriesTest extends TestCase
         $expectedTimestamp = (string) Carbon::now()->getTimestamp();
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         // Lower bound is '0' (to exclude -1 forever items)
         // Upper bound is current timestamp
-        $pipeline->shouldReceive('zRemRangeByScore')
+        $client->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with('prefix:tag:users:entries', '0', $expectedTimestamp);
+            ->with('prefix:tag:users:entries', '0', $expectedTimestamp)
+            ->andReturn($client);
 
-        $pipeline->shouldReceive('exec')
-            ->once();
+        $client->shouldReceive('exec')->once();
 
         $store = $this->createStore($connection);
         $operation = new FlushStaleEntries($store->getContext());
@@ -176,26 +167,24 @@ class FlushStaleEntriesTest extends TestCase
         Carbon::setTestNow('2000-01-01 00:00:00');
 
         $connection = $this->mockConnection();
-        $pipeline = m::mock();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('multi')
-            ->once()
-            ->with(Redis::PIPELINE)
-            ->andReturn($pipeline);
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         // The lower bound is '0', not '-inf', so -1 scores are excluded
-        $pipeline->shouldReceive('zRemRangeByScore')
+        $client->shouldReceive('zRemRangeByScore')
             ->once()
             ->with('prefix:tag:users:entries', '0', m::type('string'))
-            ->andReturnUsing(function ($key, $min, $max) {
+            ->andReturnUsing(function ($key, $min, $max) use ($client) {
                 // Verify lower bound excludes -1 forever items
                 $this->assertSame('0', $min);
                 // Verify upper bound is a valid timestamp
                 $this->assertIsNumeric($max);
+
+                return $client;
             });
 
-        $pipeline->shouldReceive('exec')
-            ->once();
+        $client->shouldReceive('exec')->once();
 
         $store = $this->createStore($connection);
         $operation = new FlushStaleEntries($store->getContext());
@@ -230,7 +219,7 @@ class FlushStaleEntriesTest extends TestCase
         $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
 
         // Should NOT use pipeline in cluster mode
-        $connection->shouldNotReceive('multi');
+        $clusterClient->shouldNotReceive('pipeline');
 
         // Should use sequential zRemRangeByScore calls directly on client
         $clusterClient->shouldReceive('zRemRangeByScore')
@@ -276,7 +265,7 @@ class FlushStaleEntriesTest extends TestCase
         $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
 
         // Should NOT use pipeline in cluster mode
-        $connection->shouldNotReceive('multi');
+        $clusterClient->shouldNotReceive('pipeline');
 
         // Should use sequential zRemRangeByScore calls for each tag
         $timestamp = (string) now()->getTimestamp();
