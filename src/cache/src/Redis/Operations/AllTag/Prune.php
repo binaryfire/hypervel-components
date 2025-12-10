@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache\Redis\Operations\AllTag;
 
+use Hypervel\Cache\Redis\Query\SafeScan;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
-use Redis;
-use RedisCluster;
 
 /**
- * Prune stale entries from all tag sorted sets.
+ * Prune stale and orphaned entries from all tag sorted sets.
  *
  * This operation performs a complete cleanup of all-mode tag data:
  * 1. Discovers all tag sorted sets via SCAN (pattern from StoreContext::tagScanPattern())
  * 2. Removes stale entries via ZREMRANGEBYSCORE (scores between 0 and now)
- * 3. Deletes empty sorted sets (ZCARD == 0)
+ * 3. Removes orphaned entries where the cache key no longer exists (ZSCAN + EXISTS + ZREM)
+ * 4. Deletes empty sorted sets (ZCARD == 0)
  *
  * Forever items (score = -1) are preserved since ZREMRANGEBYSCORE uses 0 as
  * the lower bound, excluding negative scores.
@@ -31,11 +31,6 @@ class Prune
     private const DEFAULT_SCAN_COUNT = 1000;
 
     /**
-     * Number of tags to process in each batch for ZREMRANGEBYSCORE/ZCARD/DEL.
-     */
-    private const BATCH_SIZE = 100;
-
-    /**
      * Create a new prune operation instance.
      */
     public function __construct(
@@ -45,194 +40,72 @@ class Prune
     /**
      * Execute the prune operation.
      *
-     * @param int $scanCount Number of keys per SCAN iteration
-     * @return array{tags_scanned: int, entries_removed: int, empty_sets_deleted: int}
+     * @param int $scanCount Number of keys per SCAN/ZSCAN iteration
+     * @return array{tags_scanned: int, stale_entries_removed: int, entries_checked: int, orphans_removed: int, empty_sets_deleted: int}
      */
     public function execute(int $scanCount = self::DEFAULT_SCAN_COUNT): array
     {
-        if ($this->context->isCluster()) {
-            return $this->executeCluster($scanCount);
-        }
-
-        return $this->executePipeline($scanCount);
-    }
-
-    /**
-     * Execute using pipeline for standard Redis.
-     *
-     * @return array{tags_scanned: int, entries_removed: int, empty_sets_deleted: int}
-     */
-    private function executePipeline(int $scanCount): array
-    {
         return $this->context->withConnection(function (RedisConnection $conn) use ($scanCount) {
             $client = $conn->client();
             $pattern = $this->context->tagScanPattern();
+            $optPrefix = $this->context->optPrefix();
+            $prefix = $this->context->prefix();
             $now = time();
 
-            $tagsScanned = 0;
-            $entriesRemoved = 0;
-            $emptySetsDeleted = 0;
-
-            // Discover and process tags in batches
-            $tagBatch = [];
-
-            foreach ($this->scanForTags($client, $pattern, $scanCount) as $tagKey) {
-                $tagBatch[] = $tagKey;
-
-                if (count($tagBatch) >= self::BATCH_SIZE) {
-                    $result = $this->processBatchPipeline($client, $tagBatch, $now);
-                    $tagsScanned += $result['scanned'];
-                    $entriesRemoved += $result['removed'];
-                    $emptySetsDeleted += $result['deleted'];
-                    $tagBatch = [];
-                }
-            }
-
-            // Process remaining tags
-            if (! empty($tagBatch)) {
-                $result = $this->processBatchPipeline($client, $tagBatch, $now);
-                $tagsScanned += $result['scanned'];
-                $entriesRemoved += $result['removed'];
-                $emptySetsDeleted += $result['deleted'];
-            }
-
-            return [
-                'tags_scanned' => $tagsScanned,
-                'entries_removed' => $entriesRemoved,
-                'empty_sets_deleted' => $emptySetsDeleted,
+            $stats = [
+                'tags_scanned' => 0,
+                'stale_entries_removed' => 0,
+                'entries_checked' => 0,
+                'orphans_removed' => 0,
+                'empty_sets_deleted' => 0,
             ];
-        });
-    }
 
-    /**
-     * Execute using sequential commands for Redis Cluster.
-     *
-     * @return array{tags_scanned: int, entries_removed: int, empty_sets_deleted: int}
-     */
-    private function executeCluster(int $scanCount): array
-    {
-        return $this->context->withConnection(function (RedisConnection $conn) use ($scanCount) {
-            $client = $conn->client();
-            $pattern = $this->context->tagScanPattern();
-            $now = time();
+            // Use SafeScan to handle OPT_PREFIX correctly
+            $safeScan = new SafeScan($client, $optPrefix);
 
-            $tagsScanned = 0;
-            $entriesRemoved = 0;
-            $emptySetsDeleted = 0;
+            foreach ($safeScan->execute($pattern, $scanCount) as $tagKey) {
+                $stats['tags_scanned']++;
 
-            foreach ($this->scanForTags($client, $pattern, $scanCount) as $tagKey) {
-                $tagsScanned++;
+                // Step 1: Remove TTL-expired entries (stale by time)
+                $staleRemoved = $client->zRemRangeByScore($tagKey, '0', (string) $now);
+                $stats['stale_entries_removed'] += is_int($staleRemoved) ? $staleRemoved : 0;
 
-                // Remove stale entries
-                $removed = $client->zRemRangeByScore($tagKey, '0', (string) $now);
-                $entriesRemoved += is_int($removed) ? $removed : 0;
+                // Step 2: Remove orphaned entries (cache key doesn't exist)
+                $orphanResult = $this->removeOrphanedEntries($client, $tagKey, $prefix, $scanCount);
+                $stats['entries_checked'] += $orphanResult['checked'];
+                $stats['orphans_removed'] += $orphanResult['removed'];
 
-                // Delete if empty
-                $count = $client->zCard($tagKey);
-                if ($count === 0) {
+                // Step 3: Delete if empty
+                if ($client->zCard($tagKey) === 0) {
                     $client->del($tagKey);
-                    $emptySetsDeleted++;
+                    $stats['empty_sets_deleted']++;
                 }
+
+                // Throttle between tags to let Redis breathe
+                usleep(5000); // 5ms
             }
 
-            return [
-                'tags_scanned' => $tagsScanned,
-                'entries_removed' => $entriesRemoved,
-                'empty_sets_deleted' => $emptySetsDeleted,
-            ];
+            return $stats;
         });
     }
 
     /**
-     * Process a batch of tags using pipeline.
+     * Remove orphaned entries from a sorted set where the cache key no longer exists.
+     *
+     * Uses multi() which works for both standard Redis (pipelined) and cluster mode
+     * (groups commands by node, sends sequentially, aggregates results).
      *
      * @param \Redis|\RedisCluster $client
-     * @param array<string> $tagKeys Full tag key names (with prefix)
-     * @return array{scanned: int, removed: int, deleted: int}
+     * @param string $tagKey The tag sorted set key (without OPT_PREFIX, phpredis auto-adds it)
+     * @param string $prefix The cache prefix (e.g., "cache:")
+     * @param int $scanCount Number of members per ZSCAN iteration
+     * @return array{checked: int, removed: int}
      */
-    private function processBatchPipeline(mixed $client, array $tagKeys, int $now): array
+    private function removeOrphanedEntries(mixed $client, string $tagKey, string $prefix, int $scanCount): array
     {
-        $scanned = count($tagKeys);
-
-        // Step 1: Remove stale entries from all tags in batch
-        $pipeline = $client->pipeline();
-        foreach ($tagKeys as $tagKey) {
-            $pipeline->zRemRangeByScore($tagKey, '0', (string) $now);
-        }
-        $removeResults = $pipeline->exec();
-
+        $checked = 0;
         $removed = 0;
-        foreach ($removeResults as $result) {
-            $removed += is_int($result) ? $result : 0;
-        }
 
-        // Step 2: Check cardinality of all tags
-        $pipeline = $client->pipeline();
-        foreach ($tagKeys as $tagKey) {
-            $pipeline->zCard($tagKey);
-        }
-        $cardResults = $pipeline->exec();
-
-        // Step 3: Delete empty sets
-        $emptyKeys = [];
-        foreach ($cardResults as $i => $count) {
-            if ($count === 0) {
-                $emptyKeys[] = $tagKeys[$i];
-            }
-        }
-
-        $deleted = 0;
-        if (! empty($emptyKeys)) {
-            $pipeline = $client->pipeline();
-            foreach ($emptyKeys as $key) {
-                $pipeline->del($key);
-            }
-            $pipeline->exec();
-            $deleted = count($emptyKeys);
-        }
-
-        return [
-            'scanned' => $scanned,
-            'removed' => $removed,
-            'deleted' => $deleted,
-        ];
-    }
-
-    /**
-     * Scan for tag sorted set keys matching the pattern.
-     *
-     * For standard Redis, scans the single instance.
-     * For RedisCluster, scans ALL master nodes since keys are distributed.
-     *
-     * @param \Redis|\RedisCluster $client
-     * @return \Generator<string> Yields full tag key names (with prefix)
-     */
-    private function scanForTags(mixed $client, string $pattern, int $count): \Generator
-    {
-        $seen = [];
-
-        if ($client instanceof RedisCluster) {
-            // Cluster mode: scan each master node to find all keys
-            // RedisCluster::scan() requires a node parameter
-            foreach ($client->_masters() as $master) {
-                yield from $this->scanNode($client, $master, $pattern, $count, $seen);
-            }
-        } else {
-            // Standard mode: scan single instance
-            yield from $this->scanNode($client, null, $pattern, $count, $seen);
-        }
-    }
-
-    /**
-     * Scan a single Redis node for keys matching the pattern.
-     *
-     * @param \Redis|\RedisCluster $client
-     * @param array|null $node Master node address for cluster mode [host, port], null for standard mode
-     * @param array<string, bool> $seen Reference to seen keys for deduplication
-     * @return \Generator<string> Yields full tag key names (with prefix)
-     */
-    private function scanNode(mixed $client, ?array $node, string $pattern, int $count, array &$seen): \Generator
-    {
         // phpredis 6.1.0+ uses null as initial cursor, older versions use 0
         $iterator = match (true) {
             version_compare(phpversion('redis') ?: '0', '6.1.0', '>=') => null,
@@ -240,26 +113,47 @@ class Prune
         };
 
         do {
-            if ($node !== null) {
-                // RedisCluster::scan(&$iterator, $key_or_address, $pattern, $count)
-                $keys = $client->scan($iterator, $node, $pattern, $count);
-            } else {
-                // Redis::scan(&$iterator, $pattern, $count)
-                $keys = $client->scan($iterator, $pattern, $count);
-            }
+            // ZSCAN returns [member => score, ...] array
+            $members = $client->zScan($tagKey, $iterator, '*', $scanCount);
 
-            if ($keys === false || ! is_array($keys)) {
+            if ($members === false || ! is_array($members) || empty($members)) {
                 break;
             }
 
-            foreach ($keys as $key) {
-                // Deduplicate (SCAN can return duplicates, especially across nodes)
-                if (isset($seen[$key])) {
-                    continue;
+            $memberKeys = array_keys($members);
+            $checked += count($memberKeys);
+
+            // Use multi() for EXISTS checks - works in both standard and cluster mode
+            // In standard mode: acts like pipeline (batched)
+            // In cluster mode: groups by node, sends sequentially, aggregates results
+            $multi = $client->multi();
+
+            foreach ($memberKeys as $key) {
+                $multi->exists($prefix . $key);
+            }
+
+            $existsResults = $multi->exec();
+
+            // Collect orphaned members (cache key doesn't exist)
+            $orphanedMembers = [];
+
+            foreach ($memberKeys as $index => $key) {
+                // EXISTS returns int (0 or 1) in multi mode
+                if (empty($existsResults[$index])) {
+                    $orphanedMembers[] = $key;
                 }
-                $seen[$key] = true;
-                yield $key;
+            }
+
+            // Remove orphaned members from the sorted set
+            if (! empty($orphanedMembers)) {
+                $client->zRem($tagKey, ...$orphanedMembers);
+                $removed += count($orphanedMembers);
             }
         } while ($iterator > 0);
+
+        return [
+            'checked' => $checked,
+            'removed' => $removed,
+        ];
     }
 }

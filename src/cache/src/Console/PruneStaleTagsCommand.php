@@ -62,7 +62,7 @@ class PruneStaleTagsCommand extends Command
     /**
      * Display stats for all mode pruning.
      *
-     * @param array{tags_scanned: int, entries_removed: int, empty_sets_deleted: int} $stats
+     * @param array{tags_scanned: int, stale_entries_removed: int, entries_checked: int, orphans_removed: int, empty_sets_deleted: int} $stats
      */
     protected function displayAllModeStats(array $stats): void
     {
@@ -70,7 +70,9 @@ class PruneStaleTagsCommand extends Command
             ['Metric', 'Value'],
             [
                 ['Tags scanned', number_format($stats['tags_scanned'])],
-                ['Stale entries removed', number_format($stats['entries_removed'])],
+                ['Stale entries removed (TTL expired)', number_format($stats['stale_entries_removed'])],
+                ['Entries checked for orphans', number_format($stats['entries_checked'])],
+                ['Orphaned entries removed', number_format($stats['orphans_removed'])],
                 ['Empty tag sets deleted', number_format($stats['empty_sets_deleted'])],
             ]
         );
