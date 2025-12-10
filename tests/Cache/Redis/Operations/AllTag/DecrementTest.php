@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AllTag;
 
 use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\Pool\RedisPool;
@@ -16,19 +16,19 @@ use Redis;
 use RedisCluster;
 
 /**
- * Tests for the Increment operation (intersection tags).
+ * Tests for the Decrement operation (intersection tags).
  *
  * @internal
  * @coversNothing
  */
-class IncrementTest extends TestCase
+class DecrementTest extends TestCase
 {
     use MocksRedisConnections;
 
     /**
      * @test
      */
-    public function testIncrementWithTagsInPipelineMode(): void
+    public function testDecrementWithTagsInPipelineMode(): void
     {
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
@@ -38,11 +38,11 @@ class IncrementTest extends TestCase
         // ZADD NX for tag with score -1 (only add if not exists)
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', ['NX'], -1, 'counter')
+            ->with('prefix:_all:tag:users:entries', ['NX'], -1, 'counter')
             ->andReturn($client);
 
-        // INCRBY
-        $client->shouldReceive('incrby')
+        // DECRBY
+        $client->shouldReceive('decrby')
             ->once()
             ->with('prefix:counter', 1)
             ->andReturn($client);
@@ -52,10 +52,10 @@ class IncrementTest extends TestCase
             ->andReturn([1, 5]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->increment()->execute(
+        $result = $store->allTagOps()->decrement()->execute(
             'counter',
             1,
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
         $this->assertSame(5, $result);
@@ -64,7 +64,7 @@ class IncrementTest extends TestCase
     /**
      * @test
      */
-    public function testIncrementWithCustomValue(): void
+    public function testDecrementWithCustomValue(): void
     {
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
@@ -73,32 +73,32 @@ class IncrementTest extends TestCase
 
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', ['NX'], -1, 'counter')
+            ->with('prefix:_all:tag:users:entries', ['NX'], -1, 'counter')
             ->andReturn($client);
 
-        $client->shouldReceive('incrby')
+        $client->shouldReceive('decrby')
             ->once()
             ->with('prefix:counter', 10)
             ->andReturn($client);
 
         $client->shouldReceive('exec')
             ->once()
-            ->andReturn([0, 15]);  // 0 means key already existed (NX condition)
+            ->andReturn([0, -5]);  // 0 means key already existed (NX condition)
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->increment()->execute(
+        $result = $store->allTagOps()->decrement()->execute(
             'counter',
             10,
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
-        $this->assertSame(15, $result);
+        $this->assertSame(-5, $result);
     }
 
     /**
      * @test
      */
-    public function testIncrementWithMultipleTags(): void
+    public function testDecrementWithMultipleTags(): void
     {
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
@@ -108,36 +108,36 @@ class IncrementTest extends TestCase
         // ZADD NX for each tag
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', ['NX'], -1, 'counter')
+            ->with('prefix:_all:tag:users:entries', ['NX'], -1, 'counter')
             ->andReturn($client);
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:posts:entries', ['NX'], -1, 'counter')
+            ->with('prefix:_all:tag:posts:entries', ['NX'], -1, 'counter')
             ->andReturn($client);
 
-        $client->shouldReceive('incrby')
+        $client->shouldReceive('decrby')
             ->once()
             ->with('prefix:counter', 1)
             ->andReturn($client);
 
         $client->shouldReceive('exec')
             ->once()
-            ->andReturn([1, 1, 1]);
+            ->andReturn([1, 1, 9]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->increment()->execute(
+        $result = $store->allTagOps()->decrement()->execute(
             'counter',
             1,
-            ['tag:users:entries', 'tag:posts:entries']
+            ['_all:tag:users:entries', '_all:tag:posts:entries']
         );
 
-        $this->assertSame(1, $result);
+        $this->assertSame(9, $result);
     }
 
     /**
      * @test
      */
-    public function testIncrementWithEmptyTags(): void
+    public function testDecrementWithEmptyTags(): void
     {
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
@@ -145,29 +145,29 @@ class IncrementTest extends TestCase
         $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         // No ZADD calls expected
-        $client->shouldReceive('incrby')
+        $client->shouldReceive('decrby')
             ->once()
             ->with('prefix:counter', 1)
             ->andReturn($client);
 
         $client->shouldReceive('exec')
             ->once()
-            ->andReturn([1]);
+            ->andReturn([-1]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->increment()->execute(
+        $result = $store->allTagOps()->decrement()->execute(
             'counter',
             1,
             []
         );
 
-        $this->assertSame(1, $result);
+        $this->assertSame(-1, $result);
     }
 
     /**
      * @test
      */
-    public function testIncrementInClusterModeUsesSequentialCommands(): void
+    public function testDecrementInClusterModeUsesSequentialCommands(): void
     {
         $clusterClient = m::mock(RedisCluster::class);
         $clusterClient->shouldReceive('getOption')
@@ -194,35 +194,35 @@ class IncrementTest extends TestCase
         // Sequential ZADD NX
         $clusterClient->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', ['NX'], -1, 'counter')
+            ->with('prefix:_all:tag:users:entries', ['NX'], -1, 'counter')
             ->andReturn(1);
 
-        // Sequential INCRBY
-        $clusterClient->shouldReceive('incrby')
+        // Sequential DECRBY
+        $clusterClient->shouldReceive('decrby')
             ->once()
             ->with('prefix:counter', 1)
-            ->andReturn(10);
+            ->andReturn(0);
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
 
-        $result = $store->intersectionTagOps()->increment()->execute(
+        $result = $store->allTagOps()->decrement()->execute(
             'counter',
             1,
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
-        $this->assertSame(10, $result);
+        $this->assertSame(0, $result);
     }
 
     /**
      * @test
      */
-    public function testIncrementReturnsFalseOnPipelineFailure(): void
+    public function testDecrementReturnsFalseOnPipelineFailure(): void
     {
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
@@ -230,17 +230,17 @@ class IncrementTest extends TestCase
         $client->shouldReceive('pipeline')->once()->andReturn($client);
 
         $client->shouldReceive('zadd')->andReturn($client);
-        $client->shouldReceive('incrby')->andReturn($client);
+        $client->shouldReceive('decrby')->andReturn($client);
 
         $client->shouldReceive('exec')
             ->once()
             ->andReturn(false);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->increment()->execute(
+        $result = $store->allTagOps()->decrement()->execute(
             'counter',
             1,
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
         $this->assertFalse($result);

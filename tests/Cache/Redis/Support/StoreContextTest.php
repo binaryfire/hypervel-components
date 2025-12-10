@@ -7,6 +7,7 @@ namespace Hypervel\Tests\Cache\Redis\Support;
 use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\Pool\RedisPool;
 use Hypervel\Cache\Redis\Support\StoreContext;
+use Hypervel\Cache\Redis\TagMode;
 use Hypervel\Redis\RedisConnection;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
@@ -34,19 +35,19 @@ class StoreContextTest extends TestCase
         $this->assertSame('cache', $context->connectionName());
     }
 
-    public function testTagPrefixCombinesPrefixWithTagSegment(): void
+    public function testTagScanPatternCombinesPrefixWithTagSegment(): void
     {
         $context = $this->createContext(prefix: 'myapp:');
 
-        $this->assertSame('myapp:_erc:tag:', $context->tagPrefix());
+        $this->assertSame('myapp:_any:tag:*:entries', $context->tagScanPattern());
     }
 
     public function testTagHashKeyBuildsCorrectFormat(): void
     {
         $context = $this->createContext(prefix: 'myapp:');
 
-        $this->assertSame('myapp:_erc:tag:users:entries', $context->tagHashKey('users'));
-        $this->assertSame('myapp:_erc:tag:posts:entries', $context->tagHashKey('posts'));
+        $this->assertSame('myapp:_any:tag:users:entries', $context->tagHashKey('users'));
+        $this->assertSame('myapp:_any:tag:posts:entries', $context->tagHashKey('posts'));
     }
 
     public function testTagHashSuffixReturnsConstant(): void
@@ -60,15 +61,15 @@ class StoreContextTest extends TestCase
     {
         $context = $this->createContext(prefix: 'myapp:');
 
-        $this->assertSame('myapp:user:1:_erc:tags', $context->reverseIndexKey('user:1'));
-        $this->assertSame('myapp:post:42:_erc:tags', $context->reverseIndexKey('post:42'));
+        $this->assertSame('myapp:user:1:_any:tags', $context->reverseIndexKey('user:1'));
+        $this->assertSame('myapp:post:42:_any:tags', $context->reverseIndexKey('post:42'));
     }
 
     public function testRegistryKeyBuildsCorrectFormat(): void
     {
         $context = $this->createContext(prefix: 'myapp:');
 
-        $this->assertSame('myapp:_erc:tag:registry', $context->registryKey());
+        $this->assertSame('myapp:_any:tag:registry', $context->registryKey());
     }
 
     public function testWithConnectionGetsConnectionFromPoolAndReleasesIt(): void
@@ -89,7 +90,7 @@ class StoreContextTest extends TestCase
         $connection->shouldReceive('release')
             ->once();
 
-        $context = new StoreContext($poolFactory, 'default', 'prefix:');
+        $context = new StoreContext($poolFactory, 'default', 'prefix:', TagMode::Any);
 
         $result = $context->withConnection(function ($conn) use ($connection) {
             $this->assertSame($connection, $conn);
@@ -117,7 +118,7 @@ class StoreContextTest extends TestCase
         $connection->shouldReceive('release')
             ->once();
 
-        $context = new StoreContext($poolFactory, 'default', 'prefix:');
+        $context = new StoreContext($poolFactory, 'default', 'prefix:', TagMode::Any);
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('Test exception');
@@ -139,7 +140,7 @@ class StoreContextTest extends TestCase
         $connection->shouldReceive('client')->andReturn($client);
         $connection->shouldReceive('release');
 
-        $context = new StoreContext($poolFactory, 'default', 'prefix:');
+        $context = new StoreContext($poolFactory, 'default', 'prefix:', TagMode::Any);
 
         $this->assertTrue($context->isCluster());
     }
@@ -156,7 +157,7 @@ class StoreContextTest extends TestCase
         $connection->shouldReceive('client')->andReturn($client);
         $connection->shouldReceive('release');
 
-        $context = new StoreContext($poolFactory, 'default', 'prefix:');
+        $context = new StoreContext($poolFactory, 'default', 'prefix:', TagMode::Any);
 
         $this->assertFalse($context->isCluster());
     }
@@ -176,7 +177,7 @@ class StoreContextTest extends TestCase
             ->with(Redis::OPT_PREFIX)
             ->andReturn('redis_prefix:');
 
-        $context = new StoreContext($poolFactory, 'default', 'cache:');
+        $context = new StoreContext($poolFactory, 'default', 'cache:', TagMode::Any);
 
         $this->assertSame('redis_prefix:', $context->optPrefix());
     }
@@ -196,7 +197,7 @@ class StoreContextTest extends TestCase
             ->with(Redis::OPT_PREFIX)
             ->andReturn(null);
 
-        $context = new StoreContext($poolFactory, 'default', 'cache:');
+        $context = new StoreContext($poolFactory, 'default', 'cache:', TagMode::Any);
 
         $this->assertSame('', $context->optPrefix());
     }
@@ -216,9 +217,9 @@ class StoreContextTest extends TestCase
             ->with(Redis::OPT_PREFIX)
             ->andReturn('redis:');
 
-        $context = new StoreContext($poolFactory, 'default', 'cache:');
+        $context = new StoreContext($poolFactory, 'default', 'cache:', TagMode::Any);
 
-        $this->assertSame('redis:cache:_erc:tag:', $context->fullTagPrefix());
+        $this->assertSame('redis:cache:_any:tag:', $context->fullTagPrefix());
     }
 
     public function testFullReverseIndexKeyIncludesOptPrefix(): void
@@ -236,9 +237,9 @@ class StoreContextTest extends TestCase
             ->with(Redis::OPT_PREFIX)
             ->andReturn('redis:');
 
-        $context = new StoreContext($poolFactory, 'default', 'cache:');
+        $context = new StoreContext($poolFactory, 'default', 'cache:', TagMode::Any);
 
-        $this->assertSame('redis:cache:user:1:_erc:tags', $context->fullReverseIndexKey('user:1'));
+        $this->assertSame('redis:cache:user:1:_any:tags', $context->fullReverseIndexKey('user:1'));
     }
 
     public function testFullRegistryKeyIncludesOptPrefix(): void
@@ -256,27 +257,24 @@ class StoreContextTest extends TestCase
             ->with(Redis::OPT_PREFIX)
             ->andReturn('redis:');
 
-        $context = new StoreContext($poolFactory, 'default', 'cache:');
+        $context = new StoreContext($poolFactory, 'default', 'cache:', TagMode::Any);
 
-        $this->assertSame('redis:cache:_erc:tag:registry', $context->fullRegistryKey());
+        $this->assertSame('redis:cache:_any:tag:registry', $context->fullRegistryKey());
     }
 
     public function testConstantsHaveExpectedValues(): void
     {
-        $this->assertSame('_erc:tag:', StoreContext::TAG_SEGMENT);
-        $this->assertSame(':entries', StoreContext::TAG_HASH_SUFFIX);
-        $this->assertSame(':_erc:tags', StoreContext::REVERSE_INDEX_SUFFIX);
-        $this->assertSame('registry', StoreContext::TAG_REGISTRY_NAME);
         $this->assertSame(253402300799, StoreContext::MAX_EXPIRY);
         $this->assertSame('1', StoreContext::TAG_FIELD_VALUE);
     }
 
     private function createContext(
         string $connectionName = 'default',
-        string $prefix = 'prefix:'
+        string $prefix = 'prefix:',
+        TagMode $tagMode = TagMode::Any
     ): StoreContext {
         $poolFactory = m::mock(PoolFactory::class);
 
-        return new StoreContext($poolFactory, $connectionName, $prefix);
+        return new StoreContext($poolFactory, $connectionName, $prefix, $tagMode);
     }
 }

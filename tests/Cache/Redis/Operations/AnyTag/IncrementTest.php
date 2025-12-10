@@ -2,47 +2,47 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\UnionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AnyTag;
 
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 
 /**
- * Tests for the Forever operation (union tags).
+ * Tests for the Increment operation (union tags).
  *
  * @internal
  * @coversNothing
  */
-class ForeverTest extends TestCase
+class IncrementTest extends TestCase
 {
     use MocksRedisConnections;
 
     /**
      * @test
      */
-    public function testForeverWithTagsUsesLuaScript(): void
+    public function testIncrementWithTagsReturnsNewValue(): void
     {
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
 
+        // Lua script returns the incremented value
         $client->shouldReceive('evalSha')
             ->once()
             ->andReturn(false);
         $client->shouldReceive('eval')
             ->once()
             ->withArgs(function ($script, $args, $numKeys) {
-                // Forever uses SET (no TTL), HSET (no expiration), ZADD with max expiry
-                $this->assertStringContainsString("redis.call('SET'", $script);
-                $this->assertStringContainsString('HSET', $script);
-                $this->assertStringContainsString('253402300799', $script); // MAX_EXPIRY
+                $this->assertStringContainsString('INCRBY', $script);
+                $this->assertStringContainsString('TTL', $script);
                 $this->assertSame(2, $numKeys);
 
                 return true;
             })
-            ->andReturn(true);
+            ->andReturn(15); // New value after increment
 
         $redis = $this->createStore($connection);
-        $result = $redis->unionTagOps()->forever()->execute('foo', 'bar', ['users']);
-        $this->assertTrue($result);
+        $redis->setTagMode('any');
+        $result = $redis->anyTagOps()->increment()->execute('counter', 5, ['stats']);
+        $this->assertSame(15, $result);
     }
 }

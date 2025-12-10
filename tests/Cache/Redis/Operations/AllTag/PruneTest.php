@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AllTag;
 
 use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\Pool\RedisPool;
 use Hyperf\Redis\RedisFactory;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\Prune;
+use Hypervel\Cache\Redis\Operations\AllTag\Prune;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Redis\RedisConnection;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
@@ -18,7 +18,7 @@ use Redis;
 use RedisCluster;
 
 /**
- * Tests for the IntersectionTags/Prune operation.
+ * Tests for the AllTag/Prune operation.
  *
  * @internal
  * @coversNothing
@@ -66,7 +66,7 @@ class PruneTest extends TestCase
             ->once()
             ->andReturnUsing(function (&$iterator, $pattern, $count) {
                 $iterator = 0;
-                return ['prefix:tag:users:entries'];
+                return ['prefix:_all:tag:users:entries'];
             });
 
         // Pipeline for ZREMRANGEBYSCORE batch (2 pipeline calls: zRemRangeByScore + zCard)
@@ -75,7 +75,7 @@ class PruneTest extends TestCase
         // ZREMRANGEBYSCORE removes 5 stale entries
         $client->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with('prefix:tag:users:entries', '0', m::type('string'))
+            ->with('prefix:_all:tag:users:entries', '0', m::type('string'))
             ->andReturn($client);
         $client->shouldReceive('exec')
             ->once()
@@ -84,7 +84,7 @@ class PruneTest extends TestCase
         // ZCARD check - returns 3 remaining entries (not empty, so no 3rd pipeline for DEL)
         $client->shouldReceive('zCard')
             ->once()
-            ->with('prefix:tag:users:entries')
+            ->with('prefix:_all:tag:users:entries')
             ->andReturn($client);
         $client->shouldReceive('exec')
             ->once()
@@ -113,7 +113,7 @@ class PruneTest extends TestCase
             ->once()
             ->andReturnUsing(function (&$iterator, $pattern, $count) {
                 $iterator = 0;
-                return ['prefix:tag:users:entries'];
+                return ['prefix:_all:tag:users:entries'];
             });
 
         // Pipeline for ZREMRANGEBYSCORE
@@ -138,7 +138,7 @@ class PruneTest extends TestCase
         // DEL for empty set
         $client->shouldReceive('del')
             ->once()
-            ->with('prefix:tag:users:entries')
+            ->with('prefix:_all:tag:users:entries')
             ->andReturn($client);
         $client->shouldReceive('exec')
             ->once()
@@ -168,9 +168,9 @@ class PruneTest extends TestCase
             ->andReturnUsing(function (&$iterator, $pattern, $count) {
                 $iterator = 0;
                 return [
-                    'prefix:tag:users:entries',
-                    'prefix:tag:posts:entries',
-                    'prefix:tag:comments:entries',
+                    'prefix:_all:tag:users:entries',
+                    'prefix:_all:tag:posts:entries',
+                    'prefix:_all:tag:comments:entries',
                 ];
             });
 
@@ -221,9 +221,9 @@ class PruneTest extends TestCase
         $fakeClient = new FakeRedisClient(
             scanResults: [
                 // First scan: returns 2 keys, iterator = 100 (continue)
-                ['keys' => ['prefix:tag:users:entries', 'prefix:tag:posts:entries'], 'iterator' => 100],
+                ['keys' => ['prefix:_all:tag:users:entries', 'prefix:_all:tag:posts:entries'], 'iterator' => 100],
                 // Second scan: returns 1 duplicate + 1 new, iterator = 0 (done)
-                ['keys' => ['prefix:tag:users:entries', 'prefix:tag:comments:entries'], 'iterator' => 0],
+                ['keys' => ['prefix:_all:tag:users:entries', 'prefix:_all:tag:comments:entries'], 'iterator' => 0],
             ],
             execResults: [
                 [1, 1, 1], // ZREMRANGEBYSCORE results: 1 entry removed per tag
@@ -244,7 +244,7 @@ class PruneTest extends TestCase
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
@@ -272,13 +272,13 @@ class PruneTest extends TestCase
         // SCAN should use custom prefix pattern
         $client->shouldReceive('scan')
             ->once()
-            ->with(m::any(), 'custom_prefix:tag:*:entries', m::any())
+            ->with(m::any(), 'custom_prefix:_all:tag:*:entries', m::any())
             ->andReturnUsing(function (&$iterator) {
                 $iterator = 0;
                 return [];
             });
 
-        $store = $this->createStore($connection, 'custom_prefix');
+        $store = $this->createStore($connection, 'custom_prefix:');
         $operation = new Prune($store->getContext());
 
         $operation->execute();
@@ -320,7 +320,7 @@ class PruneTest extends TestCase
             ->andReturnUsing(function (&$iterator, $node, $pattern, $count) use ($masterNode) {
                 $this->assertSame($masterNode, $node);
                 $iterator = 0;
-                return ['prefix:tag:users:entries'];
+                return ['prefix:_all:tag:users:entries'];
             });
 
         // Should NOT use pipeline in cluster mode
@@ -329,19 +329,19 @@ class PruneTest extends TestCase
         // Sequential commands
         $clusterClient->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with('prefix:tag:users:entries', '0', m::type('string'))
+            ->with('prefix:_all:tag:users:entries', '0', m::type('string'))
             ->andReturn(5);
 
         $clusterClient->shouldReceive('zCard')
             ->once()
-            ->with('prefix:tag:users:entries')
+            ->with('prefix:_all:tag:users:entries')
             ->andReturn(3);
 
         // Not empty, so no DEL
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
@@ -389,7 +389,7 @@ class PruneTest extends TestCase
             ->once()
             ->andReturnUsing(function (&$iterator, $node, $pattern, $count) {
                 $iterator = 0;
-                return ['prefix:tag:users:entries'];
+                return ['prefix:_all:tag:users:entries'];
             });
 
         $clusterClient->shouldReceive('zRemRangeByScore')
@@ -402,12 +402,12 @@ class PruneTest extends TestCase
 
         $clusterClient->shouldReceive('del')
             ->once()
-            ->with('prefix:tag:users:entries')
+            ->with('prefix:_all:tag:users:entries')
             ->andReturn(1);
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
@@ -434,7 +434,7 @@ class PruneTest extends TestCase
             ->once()
             ->andReturnUsing(function (&$iterator) {
                 $iterator = 0;
-                return ['prefix:tag:users:entries'];
+                return ['prefix:_all:tag:users:entries'];
             });
 
         // 2 pipelines: ZREMRANGEBYSCORE + ZCARD (no DEL since not empty)
@@ -443,7 +443,7 @@ class PruneTest extends TestCase
         // Verify lower bound is '0', not '-inf'
         $client->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with('prefix:tag:users:entries', '0', m::type('string'))
+            ->with('prefix:_all:tag:users:entries', '0', m::type('string'))
             ->andReturnUsing(function ($key, $min, $max) use ($client) {
                 // Lower bound is '0', so -1 forever items are excluded
                 $this->assertSame('0', $min);
@@ -507,7 +507,7 @@ class PruneTest extends TestCase
         $store = $this->createStore($connection);
 
         // Access via the operations container
-        $result = $store->intersectionTagOps()->prune()->execute();
+        $result = $store->allTagOps()->prune()->execute();
 
         $this->assertSame(0, $result['tags_scanned']);
     }
@@ -555,9 +555,9 @@ class PruneTest extends TestCase
                 $iterator = 0;
                 // Each node returns one tag key
                 return match ($node[1]) {
-                    7000 => ['prefix:tag:users:entries'],
-                    7001 => ['prefix:tag:posts:entries'],
-                    7002 => ['prefix:tag:comments:entries'],
+                    7000 => ['prefix:_all:tag:users:entries'],
+                    7001 => ['prefix:_all:tag:posts:entries'],
+                    7002 => ['prefix:_all:tag:comments:entries'],
                     default => [],
                 };
             });
@@ -573,7 +573,7 @@ class PruneTest extends TestCase
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
@@ -632,7 +632,7 @@ class PruneTest extends TestCase
             ->andReturnUsing(function (&$iterator, $node, $pattern, $count) {
                 $iterator = 0;
                 // Both return same tag (simulating possible inconsistency during rebalancing)
-                return ['prefix:tag:users:entries'];
+                return ['prefix:_all:tag:users:entries'];
             });
 
         // Should only process the tag ONCE (deduplicated)
@@ -646,7 +646,7 @@ class PruneTest extends TestCase
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );

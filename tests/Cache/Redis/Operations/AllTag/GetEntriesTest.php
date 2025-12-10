@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AllTag;
 
 use Hyperf\Collection\LazyCollection;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\GetEntries;
+use Hypervel\Cache\Redis\Operations\AllTag\GetEntries;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
@@ -28,7 +28,7 @@ class GetEntriesTest extends TestCase
         $connection = $this->mockConnection();
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', m::any(), '*', 1000)
+            ->with('prefix:_all:tag:users:entries', m::any(), '*', 1000)
             ->andReturnUsing(function ($key, &$cursor) {
                 $cursor = 0;
 
@@ -36,13 +36,13 @@ class GetEntriesTest extends TestCase
             });
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', 0, '*', 1000)
+            ->with('prefix:_all:tag:users:entries', 0, '*', 1000)
             ->andReturnNull();
 
         $store = $this->createStore($connection);
         $operation = new GetEntries($store->getContext());
 
-        $entries = $operation->execute(['tag:users:entries']);
+        $entries = $operation->execute(['_all:tag:users:entries']);
 
         $this->assertInstanceOf(LazyCollection::class, $entries);
         $this->assertSame(['key1', 'key2'], $entries->all());
@@ -56,7 +56,7 @@ class GetEntriesTest extends TestCase
         $connection = $this->mockConnection();
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', m::any(), '*', 1000)
+            ->with('prefix:_all:tag:users:entries', m::any(), '*', 1000)
             ->andReturnUsing(function ($key, &$cursor) {
                 $cursor = 0;
 
@@ -64,13 +64,13 @@ class GetEntriesTest extends TestCase
             });
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', 0, '*', 1000)
+            ->with('prefix:_all:tag:users:entries', 0, '*', 1000)
             ->andReturnNull();
 
         $store = $this->createStore($connection);
         $operation = new GetEntries($store->getContext());
 
-        $entries = $operation->execute(['tag:users:entries']);
+        $entries = $operation->execute(['_all:tag:users:entries']);
 
         $this->assertSame([], $entries->all());
     }
@@ -85,7 +85,7 @@ class GetEntriesTest extends TestCase
         // First tag
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', m::any(), '*', 1000)
+            ->with('prefix:_all:tag:users:entries', m::any(), '*', 1000)
             ->andReturnUsing(function ($key, &$cursor) {
                 $cursor = 0;
 
@@ -93,13 +93,13 @@ class GetEntriesTest extends TestCase
             });
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', 0, '*', 1000)
+            ->with('prefix:_all:tag:users:entries', 0, '*', 1000)
             ->andReturnNull();
 
         // Second tag
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:posts:entries', m::any(), '*', 1000)
+            ->with('prefix:_all:tag:posts:entries', m::any(), '*', 1000)
             ->andReturnUsing(function ($key, &$cursor) {
                 $cursor = 0;
 
@@ -107,13 +107,13 @@ class GetEntriesTest extends TestCase
             });
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:posts:entries', 0, '*', 1000)
+            ->with('prefix:_all:tag:posts:entries', 0, '*', 1000)
             ->andReturnNull();
 
         $store = $this->createStore($connection);
         $operation = new GetEntries($store->getContext());
 
-        $entries = $operation->execute(['tag:users:entries', 'tag:posts:entries']);
+        $entries = $operation->execute(['_all:tag:users:entries', '_all:tag:posts:entries']);
 
         // Should combine entries from both tags
         $this->assertSame(['user_key1', 'user_key2', 'post_key1'], $entries->all());
@@ -127,7 +127,7 @@ class GetEntriesTest extends TestCase
         $connection = $this->mockConnection();
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', m::any(), '*', 1000)
+            ->with('prefix:_all:tag:users:entries', m::any(), '*', 1000)
             ->andReturnUsing(function ($key, &$cursor) {
                 $cursor = 0;
 
@@ -135,13 +135,13 @@ class GetEntriesTest extends TestCase
             });
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', 0, '*', 1000)
+            ->with('prefix:_all:tag:users:entries', 0, '*', 1000)
             ->andReturnNull();
 
         $store = $this->createStore($connection);
         $operation = new GetEntries($store->getContext());
 
-        $entries = $operation->execute(['tag:users:entries']);
+        $entries = $operation->execute(['_all:tag:users:entries']);
 
         // array_unique is applied within each tag
         $this->assertCount(2, $entries->all());
@@ -156,13 +156,13 @@ class GetEntriesTest extends TestCase
         // zScan returns null/false when done or empty
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', m::any(), '*', 1000)
+            ->with('prefix:_all:tag:users:entries', m::any(), '*', 1000)
             ->andReturnNull();
 
         $store = $this->createStore($connection);
         $operation = new GetEntries($store->getContext());
 
-        $entries = $operation->execute(['tag:users:entries']);
+        $entries = $operation->execute(['_all:tag:users:entries']);
 
         $this->assertSame([], $entries->all());
     }
@@ -176,13 +176,13 @@ class GetEntriesTest extends TestCase
         // zScan can return false in some cases
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', m::any(), '*', 1000)
+            ->with('prefix:_all:tag:users:entries', m::any(), '*', 1000)
             ->andReturn(false);
 
         $store = $this->createStore($connection);
         $operation = new GetEntries($store->getContext());
 
-        $entries = $operation->execute(['tag:users:entries']);
+        $entries = $operation->execute(['_all:tag:users:entries']);
 
         $this->assertSame([], $entries->all());
     }
@@ -212,7 +212,7 @@ class GetEntriesTest extends TestCase
         $connection = $this->mockConnection();
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('custom_prefix:tag:users:entries', m::any(), '*', 1000)
+            ->with('custom_prefix:_all:tag:users:entries', m::any(), '*', 1000)
             ->andReturnUsing(function ($key, &$cursor) {
                 $cursor = 0;
 
@@ -220,13 +220,13 @@ class GetEntriesTest extends TestCase
             });
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('custom_prefix:tag:users:entries', 0, '*', 1000)
+            ->with('custom_prefix:_all:tag:users:entries', 0, '*', 1000)
             ->andReturnNull();
 
-        $store = $this->createStore($connection, 'custom_prefix');
+        $store = $this->createStore($connection, 'custom_prefix:');
         $operation = new GetEntries($store->getContext());
 
-        $entries = $operation->execute(['tag:users:entries']);
+        $entries = $operation->execute(['_all:tag:users:entries']);
 
         $this->assertSame(['key1'], $entries->all());
     }
@@ -241,7 +241,7 @@ class GetEntriesTest extends TestCase
         // First page
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', m::any(), '*', 1000)
+            ->with('prefix:_all:tag:users:entries', m::any(), '*', 1000)
             ->andReturnUsing(function ($key, &$cursor) {
                 $cursor = 123; // Non-zero cursor indicates more data
 
@@ -251,7 +251,7 @@ class GetEntriesTest extends TestCase
         // Second page (returns remaining entries)
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', 123, '*', 1000)
+            ->with('prefix:_all:tag:users:entries', 123, '*', 1000)
             ->andReturnUsing(function ($key, &$cursor) {
                 $cursor = 0; // Zero cursor indicates end
 
@@ -261,13 +261,13 @@ class GetEntriesTest extends TestCase
         // Final call with cursor 0 returns null (phpredis behavior)
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', 0, '*', 1000)
+            ->with('prefix:_all:tag:users:entries', 0, '*', 1000)
             ->andReturnNull();
 
         $store = $this->createStore($connection);
         $operation = new GetEntries($store->getContext());
 
-        $entries = $operation->execute(['tag:users:entries']);
+        $entries = $operation->execute(['_all:tag:users:entries']);
 
         $this->assertSame(['key1', 'key2', 'key3'], $entries->all());
     }
@@ -287,7 +287,7 @@ class GetEntriesTest extends TestCase
         // First tag has 'shared_key'
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', m::any(), '*', 1000)
+            ->with('prefix:_all:tag:users:entries', m::any(), '*', 1000)
             ->andReturnUsing(function ($key, &$cursor) {
                 $cursor = 0;
 
@@ -295,13 +295,13 @@ class GetEntriesTest extends TestCase
             });
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:users:entries', 0, '*', 1000)
+            ->with('prefix:_all:tag:users:entries', 0, '*', 1000)
             ->andReturnNull();
 
         // Second tag also has 'shared_key'
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:posts:entries', m::any(), '*', 1000)
+            ->with('prefix:_all:tag:posts:entries', m::any(), '*', 1000)
             ->andReturnUsing(function ($key, &$cursor) {
                 $cursor = 0;
 
@@ -309,13 +309,13 @@ class GetEntriesTest extends TestCase
             });
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:posts:entries', 0, '*', 1000)
+            ->with('prefix:_all:tag:posts:entries', 0, '*', 1000)
             ->andReturnNull();
 
         $store = $this->createStore($connection);
         $operation = new GetEntries($store->getContext());
 
-        $entries = $operation->execute(['tag:users:entries', 'tag:posts:entries']);
+        $entries = $operation->execute(['_all:tag:users:entries', '_all:tag:posts:entries']);
 
         // 'shared_key' appears twice - once from each tag
         $this->assertSame(['shared_key', 'user_only', 'shared_key', 'post_only'], $entries->all());

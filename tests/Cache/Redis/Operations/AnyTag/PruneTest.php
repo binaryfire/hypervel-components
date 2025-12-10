@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\UnionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AnyTag;
 
 use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\Pool\RedisPool;
 use Hyperf\Redis\RedisFactory;
-use Hypervel\Cache\Redis\Operations\UnionTags\Prune;
+use Hypervel\Cache\Redis\Operations\AnyTag\Prune;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Redis\RedisConnection;
@@ -19,7 +19,7 @@ use Redis;
 use RedisCluster;
 
 /**
- * Tests for the UnionTags/Prune operation.
+ * Tests for the AnyTag/Prune operation.
  *
  * @internal
  * @coversNothing
@@ -39,16 +39,17 @@ class PruneTest extends TestCase
         // ZREMRANGEBYSCORE on registry removes expired tags
         $client->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with('prefix:_erc:tag:registry', '-inf', m::type('string'))
+            ->with('prefix:_any:tag:registry', '-inf', m::type('string'))
             ->andReturn(2); // 2 expired tags removed
 
         // ZRANGE returns empty (no active tags)
         $client->shouldReceive('zRange')
             ->once()
-            ->with('prefix:_erc:tag:registry', 0, -1)
+            ->with('prefix:_any:tag:registry', 0, -1)
             ->andReturn([]);
 
         $store = $this->createStore($connection);
+        $store->setTagMode('any');
         $operation = new Prune($store->getContext());
 
         $result = $operation->execute();
@@ -71,13 +72,13 @@ class PruneTest extends TestCase
         // Step 1: Remove expired tags from registry
         $client->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with('prefix:_erc:tag:registry', '-inf', m::type('string'))
+            ->with('prefix:_any:tag:registry', '-inf', m::type('string'))
             ->andReturn(0);
 
         // Step 2: Get active tags
         $client->shouldReceive('zRange')
             ->once()
-            ->with('prefix:_erc:tag:registry', 0, -1)
+            ->with('prefix:_any:tag:registry', 0, -1)
             ->andReturn(['users']);
 
         // Step 3: HSCAN the tag hash
@@ -104,16 +105,17 @@ class PruneTest extends TestCase
         // HDEL orphaned key2
         $client->shouldReceive('hDel')
             ->once()
-            ->with('prefix:_erc:tag:users:entries', 'key2')
+            ->with('prefix:_any:tag:users:entries', 'key2')
             ->andReturn(1);
 
         // HLEN to check if hash is empty
         $client->shouldReceive('hLen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(2);
 
         $store = $this->createStore($connection);
+        $store->setTagMode('any');
         $operation = new Prune($store->getContext());
 
         $result = $operation->execute();
@@ -156,7 +158,7 @@ class PruneTest extends TestCase
 
         $client->shouldReceive('hDel')
             ->once()
-            ->with('prefix:_erc:tag:users:entries', 'key1')
+            ->with('prefix:_any:tag:users:entries', 'key1')
             ->andReturn(1);
 
         // Hash is now empty
@@ -167,10 +169,11 @@ class PruneTest extends TestCase
         // Delete empty hash
         $client->shouldReceive('del')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(1);
 
         $store = $this->createStore($connection);
+        $store->setTagMode('any');
         $operation = new Prune($store->getContext());
 
         $result = $operation->execute();
@@ -200,7 +203,7 @@ class PruneTest extends TestCase
         // First tag: users - 2 fields, 1 orphan
         $client->shouldReceive('hScan')
             ->once()
-            ->with('prefix:_erc:tag:users:entries', m::any(), '*', m::any())
+            ->with('prefix:_any:tag:users:entries', m::any(), '*', m::any())
             ->andReturnUsing(function ($tagHash, &$iterator) {
                 $iterator = 0;
                 return ['u1' => '1', 'u2' => '1'];
@@ -210,17 +213,17 @@ class PruneTest extends TestCase
         $client->shouldReceive('exec')->once()->andReturn([1, 0]);
         $client->shouldReceive('hDel')
             ->once()
-            ->with('prefix:_erc:tag:users:entries', 'u2')
+            ->with('prefix:_any:tag:users:entries', 'u2')
             ->andReturn(1);
         $client->shouldReceive('hLen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(1);
 
         // Second tag: posts - 1 field, 0 orphans
         $client->shouldReceive('hScan')
             ->once()
-            ->with('prefix:_erc:tag:posts:entries', m::any(), '*', m::any())
+            ->with('prefix:_any:tag:posts:entries', m::any(), '*', m::any())
             ->andReturnUsing(function ($tagHash, &$iterator) {
                 $iterator = 0;
                 return ['p1' => '1'];
@@ -230,13 +233,13 @@ class PruneTest extends TestCase
         $client->shouldReceive('exec')->once()->andReturn([1]);
         $client->shouldReceive('hLen')
             ->once()
-            ->with('prefix:_erc:tag:posts:entries')
+            ->with('prefix:_any:tag:posts:entries')
             ->andReturn(1);
 
         // Third tag: comments - 3 fields, all orphans (hash becomes empty)
         $client->shouldReceive('hScan')
             ->once()
-            ->with('prefix:_erc:tag:comments:entries', m::any(), '*', m::any())
+            ->with('prefix:_any:tag:comments:entries', m::any(), '*', m::any())
             ->andReturnUsing(function ($tagHash, &$iterator) {
                 $iterator = 0;
                 return ['c1' => '1', 'c2' => '1', 'c3' => '1'];
@@ -246,18 +249,19 @@ class PruneTest extends TestCase
         $client->shouldReceive('exec')->once()->andReturn([0, 0, 0]);
         $client->shouldReceive('hDel')
             ->once()
-            ->with('prefix:_erc:tag:comments:entries', 'c1', 'c2', 'c3')
+            ->with('prefix:_any:tag:comments:entries', 'c1', 'c2', 'c3')
             ->andReturn(3);
         $client->shouldReceive('hLen')
             ->once()
-            ->with('prefix:_erc:tag:comments:entries')
+            ->with('prefix:_any:tag:comments:entries')
             ->andReturn(0);
         $client->shouldReceive('del')
             ->once()
-            ->with('prefix:_erc:tag:comments:entries')
+            ->with('prefix:_any:tag:comments:entries')
             ->andReturn(1);
 
         $store = $this->createStore($connection);
+        $store->setTagMode('any');
         $operation = new Prune($store->getContext());
 
         $result = $operation->execute();
@@ -279,18 +283,18 @@ class PruneTest extends TestCase
 
         $client->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with('custom:_erc:tag:registry', '-inf', m::type('string'))
+            ->with('custom:_any:tag:registry', '-inf', m::type('string'))
             ->andReturn(0);
 
         $client->shouldReceive('zRange')
             ->once()
-            ->with('custom:_erc:tag:registry', 0, -1)
+            ->with('custom:_any:tag:registry', 0, -1)
             ->andReturn(['users']);
 
         // Verify correct tag hash key format
         $client->shouldReceive('hScan')
             ->once()
-            ->with('custom:_erc:tag:users:entries', m::any(), '*', m::any())
+            ->with('custom:_any:tag:users:entries', m::any(), '*', m::any())
             ->andReturnUsing(function ($tagHash, &$iterator) {
                 $iterator = 0;
                 return [];
@@ -298,15 +302,16 @@ class PruneTest extends TestCase
 
         $client->shouldReceive('hLen')
             ->once()
-            ->with('custom:_erc:tag:users:entries')
+            ->with('custom:_any:tag:users:entries')
             ->andReturn(0);
 
         $client->shouldReceive('del')
             ->once()
-            ->with('custom:_erc:tag:users:entries')
+            ->with('custom:_any:tag:users:entries')
             ->andReturn(1);
 
-        $store = $this->createStore($connection, 'custom');
+        $store = $this->createStore($connection, 'custom:');
+        $store->setTagMode('any');
         $operation = new Prune($store->getContext());
 
         $operation->execute();
@@ -366,7 +371,7 @@ class PruneTest extends TestCase
 
         $clusterClient->shouldReceive('hDel')
             ->once()
-            ->with('prefix:_erc:tag:users:entries', 'key2')
+            ->with('prefix:_any:tag:users:entries', 'key2')
             ->andReturn(1);
 
         $clusterClient->shouldReceive('hLen')
@@ -375,10 +380,11 @@ class PruneTest extends TestCase
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
+        $store->setTagMode('any');
 
         $operation = new Prune($store->getContext());
         $result = $operation->execute();
@@ -422,6 +428,7 @@ class PruneTest extends TestCase
             ->andReturn(1);
 
         $store = $this->createStore($connection);
+        $store->setTagMode('any');
         $operation = new Prune($store->getContext());
 
         $result = $operation->execute();
@@ -439,8 +446,8 @@ class PruneTest extends TestCase
     {
         // Use FakeRedisClient stub for proper reference parameter handling
         // (Mockery's andReturnUsing doesn't propagate &$iterator modifications)
-        $registryKey = 'prefix:_erc:tag:registry';
-        $tagHashKey = 'prefix:_erc:tag:users:entries';
+        $registryKey = 'prefix:_any:tag:registry';
+        $tagHashKey = 'prefix:_any:tag:users:entries';
 
         $fakeClient = new FakeRedisClient(
             scanResults: [],
@@ -477,10 +484,11 @@ class PruneTest extends TestCase
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
+        $store->setTagMode('any');
 
         $operation = new Prune($store->getContext());
         $result = $operation->execute();
@@ -528,6 +536,7 @@ class PruneTest extends TestCase
             ->andReturn(1);
 
         $store = $this->createStore($connection);
+        $store->setTagMode('any');
         $operation = new Prune($store->getContext());
 
         $operation->execute(500);
@@ -550,9 +559,10 @@ class PruneTest extends TestCase
             ->andReturn([]);
 
         $store = $this->createStore($connection);
+        $store->setTagMode('any');
 
         // Access via the operations container
-        $result = $store->unionTagOps()->prune()->execute();
+        $result = $store->anyTagOps()->prune()->execute();
 
         $this->assertSame(0, $result['hashes_scanned']);
     }
@@ -568,7 +578,7 @@ class PruneTest extends TestCase
         // 5 expired tags removed
         $client->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with('prefix:_erc:tag:registry', '-inf', m::type('string'))
+            ->with('prefix:_any:tag:registry', '-inf', m::type('string'))
             ->andReturn(5);
 
         $client->shouldReceive('zRange')
@@ -576,6 +586,7 @@ class PruneTest extends TestCase
             ->andReturn([]);
 
         $store = $this->createStore($connection);
+        $store->setTagMode('any');
         $operation = new Prune($store->getContext());
 
         $result = $operation->execute();
@@ -620,6 +631,7 @@ class PruneTest extends TestCase
             ->andReturn(3);
 
         $store = $this->createStore($connection);
+        $store->setTagMode('any');
         $operation = new Prune($store->getContext());
 
         $result = $operation->execute();

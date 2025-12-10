@@ -12,6 +12,7 @@ use Hyperf\Redis\RedisFactory;
 use Hypervel\Cache\CacheManager;
 use Hypervel\Cache\Contracts\Repository;
 use Hypervel\Cache\NullStore;
+use Hypervel\Cache\Redis\TagMode;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Redis\RedisConnection;
 use Hypervel\Tests\TestCase;
@@ -335,10 +336,10 @@ class CacheManagerTest extends TestCase
         $store = $repository->getStore();
 
         $this->assertInstanceOf(RedisStore::class, $store);
-        $this->assertSame('intersection', $store->getTaggingMode());
+        $this->assertSame(TagMode::All, $store->getTagMode());
     }
 
-    public function testRedisDriverUsesConfiguredTaggingMode(): void
+    public function testRedisDriverUsesConfiguredTagMode(): void
     {
         $userConfig = [
             'cache' => [
@@ -347,7 +348,7 @@ class CacheManagerTest extends TestCase
                     'redis' => [
                         'driver' => 'redis',
                         'connection' => 'default',
-                        'tagging_mode' => 'union',
+                        'tag_mode' => 'any',
                     ],
                 ],
             ],
@@ -360,10 +361,10 @@ class CacheManagerTest extends TestCase
         $store = $repository->getStore();
 
         $this->assertInstanceOf(RedisStore::class, $store);
-        $this->assertSame('union', $store->getTaggingMode());
+        $this->assertSame(TagMode::Any, $store->getTagMode());
     }
 
-    public function testRedisDriverFallsBackToIntersectionForInvalidTaggingMode(): void
+    public function testRedisDriverFallsBackToAllForInvalidTagMode(): void
     {
         $userConfig = [
             'cache' => [
@@ -372,7 +373,7 @@ class CacheManagerTest extends TestCase
                     'redis' => [
                         'driver' => 'redis',
                         'connection' => 'default',
-                        'tagging_mode' => 'invalid',
+                        'tag_mode' => 'invalid',
                     ],
                 ],
             ],
@@ -385,7 +386,7 @@ class CacheManagerTest extends TestCase
         $store = $repository->getStore();
 
         $this->assertInstanceOf(RedisStore::class, $store);
-        $this->assertSame('intersection', $store->getTaggingMode());
+        $this->assertSame(TagMode::All, $store->getTagMode());
     }
 
     protected function getApp(array $userConfig)

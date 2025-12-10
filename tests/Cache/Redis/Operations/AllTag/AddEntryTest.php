@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AllTag;
 
 use Carbon\Carbon;
 use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\Pool\RedisPool;
 use Hyperf\Redis\RedisFactory;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\AddEntry;
+use Hypervel\Cache\Redis\Operations\AllTag\AddEntry;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Redis\RedisConnection;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
@@ -41,7 +41,7 @@ class AddEntryTest extends TestCase
 
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', now()->timestamp + 300, 'mykey')
+            ->with('prefix:_all:tag:users:entries', now()->timestamp + 300, 'mykey')
             ->andReturn($client);
 
         $client->shouldReceive('exec')
@@ -51,7 +51,7 @@ class AddEntryTest extends TestCase
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
 
-        $operation->execute('mykey', 300, ['tag:users:entries']);
+        $operation->execute('mykey', 300, ['_all:tag:users:entries']);
     }
 
     /**
@@ -66,7 +66,7 @@ class AddEntryTest extends TestCase
 
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', -1, 'mykey')
+            ->with('prefix:_all:tag:users:entries', -1, 'mykey')
             ->andReturn($client);
 
         $client->shouldReceive('exec')
@@ -76,7 +76,7 @@ class AddEntryTest extends TestCase
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
 
-        $operation->execute('mykey', 0, ['tag:users:entries']);
+        $operation->execute('mykey', 0, ['_all:tag:users:entries']);
     }
 
     /**
@@ -91,7 +91,7 @@ class AddEntryTest extends TestCase
 
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', -1, 'mykey')
+            ->with('prefix:_all:tag:users:entries', -1, 'mykey')
             ->andReturn($client);
 
         $client->shouldReceive('exec')
@@ -101,7 +101,7 @@ class AddEntryTest extends TestCase
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
 
-        $operation->execute('mykey', -5, ['tag:users:entries']);
+        $operation->execute('mykey', -5, ['_all:tag:users:entries']);
     }
 
     /**
@@ -116,7 +116,7 @@ class AddEntryTest extends TestCase
 
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', ['NX'], -1, 'mykey')
+            ->with('prefix:_all:tag:users:entries', ['NX'], -1, 'mykey')
             ->andReturn($client);
 
         $client->shouldReceive('exec')
@@ -126,7 +126,7 @@ class AddEntryTest extends TestCase
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
 
-        $operation->execute('mykey', 0, ['tag:users:entries'], 'NX');
+        $operation->execute('mykey', 0, ['_all:tag:users:entries'], 'NX');
     }
 
     /**
@@ -141,7 +141,7 @@ class AddEntryTest extends TestCase
 
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', ['XX'], -1, 'mykey')
+            ->with('prefix:_all:tag:users:entries', ['XX'], -1, 'mykey')
             ->andReturn($client);
 
         $client->shouldReceive('exec')
@@ -151,7 +151,7 @@ class AddEntryTest extends TestCase
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
 
-        $operation->execute('mykey', 0, ['tag:users:entries'], 'XX');
+        $operation->execute('mykey', 0, ['_all:tag:users:entries'], 'XX');
     }
 
     /**
@@ -168,7 +168,7 @@ class AddEntryTest extends TestCase
 
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', ['GT'], now()->timestamp + 60, 'mykey')
+            ->with('prefix:_all:tag:users:entries', ['GT'], now()->timestamp + 60, 'mykey')
             ->andReturn($client);
 
         $client->shouldReceive('exec')
@@ -178,7 +178,7 @@ class AddEntryTest extends TestCase
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
 
-        $operation->execute('mykey', 60, ['tag:users:entries'], 'GT');
+        $operation->execute('mykey', 60, ['_all:tag:users:entries'], 'GT');
     }
 
     /**
@@ -195,11 +195,11 @@ class AddEntryTest extends TestCase
 
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', now()->timestamp + 60, 'mykey')
+            ->with('prefix:_all:tag:users:entries', now()->timestamp + 60, 'mykey')
             ->andReturn($client);
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:posts:entries', now()->timestamp + 60, 'mykey')
+            ->with('prefix:_all:tag:posts:entries', now()->timestamp + 60, 'mykey')
             ->andReturn($client);
 
         $client->shouldReceive('exec')
@@ -209,7 +209,7 @@ class AddEntryTest extends TestCase
         $store = $this->createStore($connection);
         $operation = new AddEntry($store->getContext());
 
-        $operation->execute('mykey', 60, ['tag:users:entries', 'tag:posts:entries']);
+        $operation->execute('mykey', 60, ['_all:tag:users:entries', '_all:tag:posts:entries']);
     }
 
     /**
@@ -242,17 +242,17 @@ class AddEntryTest extends TestCase
 
         $client->shouldReceive('zadd')
             ->once()
-            ->with('custom_prefix:tag:users:entries', -1, 'mykey')
+            ->with('custom_prefix:_all:tag:users:entries', -1, 'mykey')
             ->andReturn($client);
 
         $client->shouldReceive('exec')
             ->once()
             ->andReturn([1]);
 
-        $store = $this->createStore($connection, 'custom_prefix');
+        $store = $this->createStore($connection, 'custom_prefix:');
         $operation = new AddEntry($store->getContext());
 
-        $operation->execute('mykey', 0, ['tag:users:entries']);
+        $operation->execute('mykey', 0, ['_all:tag:users:entries']);
     }
 
     /**
@@ -287,18 +287,18 @@ class AddEntryTest extends TestCase
         // Should use sequential zadd calls directly on client
         $clusterClient->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', now()->timestamp + 300, 'mykey')
+            ->with('prefix:_all:tag:users:entries', now()->timestamp + 300, 'mykey')
             ->andReturn(1);
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
 
         $operation = new AddEntry($store->getContext());
-        $operation->execute('mykey', 300, ['tag:users:entries']);
+        $operation->execute('mykey', 300, ['_all:tag:users:entries']);
     }
 
     /**
@@ -334,26 +334,26 @@ class AddEntryTest extends TestCase
         $expectedScore = now()->timestamp + 60;
         $clusterClient->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', $expectedScore, 'mykey')
+            ->with('prefix:_all:tag:users:entries', $expectedScore, 'mykey')
             ->andReturn(1);
         $clusterClient->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:posts:entries', $expectedScore, 'mykey')
+            ->with('prefix:_all:tag:posts:entries', $expectedScore, 'mykey')
             ->andReturn(1);
         $clusterClient->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:comments:entries', $expectedScore, 'mykey')
+            ->with('prefix:_all:tag:comments:entries', $expectedScore, 'mykey')
             ->andReturn(1);
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
 
         $operation = new AddEntry($store->getContext());
-        $operation->execute('mykey', 60, ['tag:users:entries', 'tag:posts:entries', 'tag:comments:entries']);
+        $operation->execute('mykey', 60, ['_all:tag:users:entries', '_all:tag:posts:entries', '_all:tag:comments:entries']);
     }
 
     /**
@@ -383,18 +383,18 @@ class AddEntryTest extends TestCase
         // Should use zadd with NX flag as array (phpredis requires array for options)
         $clusterClient->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', ['NX'], -1, 'mykey')
+            ->with('prefix:_all:tag:users:entries', ['NX'], -1, 'mykey')
             ->andReturn(1);
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
 
         $operation = new AddEntry($store->getContext());
-        $operation->execute('mykey', 0, ['tag:users:entries'], 'NX');
+        $operation->execute('mykey', 0, ['_all:tag:users:entries'], 'NX');
     }
 
     /**
@@ -424,17 +424,17 @@ class AddEntryTest extends TestCase
         // Score should be -1 for forever items (TTL = 0)
         $clusterClient->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', -1, 'mykey')
+            ->with('prefix:_all:tag:users:entries', -1, 'mykey')
             ->andReturn(1);
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
 
         $operation = new AddEntry($store->getContext());
-        $operation->execute('mykey', 0, ['tag:users:entries']);
+        $operation->execute('mykey', 0, ['_all:tag:users:entries']);
     }
 }

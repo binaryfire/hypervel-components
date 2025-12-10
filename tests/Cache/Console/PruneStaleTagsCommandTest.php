@@ -9,10 +9,11 @@ use Hypervel\Cache\Console\PruneStaleTagsCommand;
 use Hypervel\Cache\Contracts\Factory as CacheContract;
 use Hypervel\Cache\Contracts\Repository;
 use Hypervel\Cache\Contracts\Store;
-use Hypervel\Cache\Redis\Operations\IntersectionTagOperations;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\Prune as IntersectionPrune;
-use Hypervel\Cache\Redis\Operations\UnionTagOperations;
-use Hypervel\Cache\Redis\Operations\UnionTags\Prune as UnionPrune;
+use Hypervel\Cache\Redis\Operations\AllTagOperations;
+use Hypervel\Cache\Redis\Operations\AllTag\Prune as IntersectionPrune;
+use Hypervel\Cache\Redis\Operations\AnyTagOperations;
+use Hypervel\Cache\Redis\Operations\AnyTag\Prune as UnionPrune;
+use Hypervel\Cache\Redis\TagMode;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Testbench\TestCase;
 use Mockery as m;
@@ -32,7 +33,7 @@ class PruneStaleTagsCommandTest extends TestCase
         parent::tearDown();
     }
 
-    public function testPruneIntersectionModeCallsCorrectOperation(): void
+    public function testPruneAllModeCallsCorrectOperation(): void
     {
         $intersectionPrune = m::mock(IntersectionPrune::class);
         $intersectionPrune->shouldReceive('execute')
@@ -43,16 +44,16 @@ class PruneStaleTagsCommandTest extends TestCase
                 'empty_sets_deleted' => 2,
             ]);
 
-        $intersectionOps = m::mock(IntersectionTagOperations::class);
+        $intersectionOps = m::mock(AllTagOperations::class);
         $intersectionOps->shouldReceive('prune')
             ->once()
             ->andReturn($intersectionPrune);
 
         $store = m::mock(RedisStore::class);
-        $store->shouldReceive('getTaggingMode')
+        $store->shouldReceive('getTagMode')
             ->once()
-            ->andReturn('intersection');
-        $store->shouldReceive('intersectionTagOps')
+            ->andReturn(TagMode::All);
+        $store->shouldReceive('allTagOps')
             ->once()
             ->andReturn($intersectionOps);
 
@@ -75,7 +76,7 @@ class PruneStaleTagsCommandTest extends TestCase
         // Mockery will verify expectations in tearDown
     }
 
-    public function testPruneUnionModeCallsCorrectOperation(): void
+    public function testPruneAnyModeCallsCorrectOperation(): void
     {
         $unionPrune = m::mock(UnionPrune::class);
         $unionPrune->shouldReceive('execute')
@@ -88,16 +89,16 @@ class PruneStaleTagsCommandTest extends TestCase
                 'expired_tags_removed' => 2,
             ]);
 
-        $unionOps = m::mock(UnionTagOperations::class);
+        $unionOps = m::mock(AnyTagOperations::class);
         $unionOps->shouldReceive('prune')
             ->once()
             ->andReturn($unionPrune);
 
         $store = m::mock(RedisStore::class);
-        $store->shouldReceive('getTaggingMode')
+        $store->shouldReceive('getTagMode')
             ->once()
-            ->andReturn('union');
-        $store->shouldReceive('unionTagOps')
+            ->andReturn(TagMode::Any);
+        $store->shouldReceive('anyTagOps')
             ->once()
             ->andReturn($unionOps);
 
@@ -131,16 +132,16 @@ class PruneStaleTagsCommandTest extends TestCase
                 'empty_sets_deleted' => 0,
             ]);
 
-        $intersectionOps = m::mock(IntersectionTagOperations::class);
+        $intersectionOps = m::mock(AllTagOperations::class);
         $intersectionOps->shouldReceive('prune')
             ->once()
             ->andReturn($intersectionPrune);
 
         $store = m::mock(RedisStore::class);
-        $store->shouldReceive('getTaggingMode')
+        $store->shouldReceive('getTagMode')
             ->once()
-            ->andReturn('intersection');
-        $store->shouldReceive('intersectionTagOps')
+            ->andReturn(TagMode::All);
+        $store->shouldReceive('allTagOps')
             ->once()
             ->andReturn($intersectionOps);
 

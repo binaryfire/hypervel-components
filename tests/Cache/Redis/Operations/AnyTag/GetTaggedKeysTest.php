@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\UnionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AnyTag;
 
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
@@ -28,15 +28,16 @@ class GetTaggedKeysTest extends TestCase
         // Small hash (below threshold) uses HKEYS
         $client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(5);
         $client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(['key1', 'key2', 'key3']);
 
         $redis = $this->createStore($connection);
-        $keys = iterator_to_array($redis->unionTagOps()->getTaggedKeys()->execute('users'));
+        $redis->setTagMode('any');
+        $keys = iterator_to_array($redis->anyTagOps()->getTaggedKeys()->execute('users'));
 
         $this->assertSame(['key1', 'key2', 'key3'], $keys);
     }
@@ -52,7 +53,7 @@ class GetTaggedKeysTest extends TestCase
         // Large hash (above threshold of 1000) uses HSCAN
         $client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(5000);
 
         // HSCAN returns key-value pairs, iterator updates by reference
@@ -65,7 +66,8 @@ class GetTaggedKeysTest extends TestCase
             ->andReturn(['key1' => '1', 'key2' => '1', 'key3' => '1']);
 
         $redis = $this->createStore($connection);
-        $keys = iterator_to_array($redis->unionTagOps()->getTaggedKeys()->execute('users'));
+        $redis->setTagMode('any');
+        $keys = iterator_to_array($redis->anyTagOps()->getTaggedKeys()->execute('users'));
 
         $this->assertSame(['key1', 'key2', 'key3'], $keys);
     }
@@ -80,15 +82,16 @@ class GetTaggedKeysTest extends TestCase
 
         $client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:nonexistent:entries')
+            ->with('prefix:_any:tag:nonexistent:entries')
             ->andReturn(0);
         $client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:nonexistent:entries')
+            ->with('prefix:_any:tag:nonexistent:entries')
             ->andReturn([]);
 
         $redis = $this->createStore($connection);
-        $keys = iterator_to_array($redis->unionTagOps()->getTaggedKeys()->execute('nonexistent'));
+        $redis->setTagMode('any');
+        $keys = iterator_to_array($redis->anyTagOps()->getTaggedKeys()->execute('nonexistent'));
 
         $this->assertSame([], $keys);
     }

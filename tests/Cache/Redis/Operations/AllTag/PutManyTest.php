@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AllTag;
 
 use Carbon\Carbon;
 use Hyperf\Redis\Pool\PoolFactory;
@@ -44,7 +44,7 @@ class PutManyTest extends TestCase
         // Format: key, score1, member1, score2, member2, ...
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', $expectedScore, 'ns:foo', $expectedScore, 'ns:baz')
+            ->with('prefix:_all:tag:users:entries', $expectedScore, 'ns:foo', $expectedScore, 'ns:baz')
             ->andReturn($client);
 
         // SETEX for each key
@@ -64,10 +64,10 @@ class PutManyTest extends TestCase
             ->andReturn([2, true, true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'bar', 'baz' => 'qux'],
             60,
-            ['tag:users:entries'],
+            ['_all:tag:users:entries'],
             'ns:'
         );
 
@@ -91,11 +91,11 @@ class PutManyTest extends TestCase
         // Variadic ZADD for each tag (one command per tag, all keys as members)
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', $expectedScore, 'ns:foo')
+            ->with('prefix:_all:tag:users:entries', $expectedScore, 'ns:foo')
             ->andReturn($client);
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:posts:entries', $expectedScore, 'ns:foo')
+            ->with('prefix:_all:tag:posts:entries', $expectedScore, 'ns:foo')
             ->andReturn($client);
 
         // SETEX for the key
@@ -109,10 +109,10 @@ class PutManyTest extends TestCase
             ->andReturn([1, 1, true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'bar'],
             120,
-            ['tag:users:entries', 'tag:posts:entries'],
+            ['_all:tag:users:entries', '_all:tag:posts:entries'],
             'ns:'
         );
 
@@ -140,7 +140,7 @@ class PutManyTest extends TestCase
             ->andReturn([true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'bar'],
             60,
             [],
@@ -162,10 +162,10 @@ class PutManyTest extends TestCase
         $client->shouldNotReceive('pipeline');
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             [],
             60,
-            ['tag:users:entries'],
+            ['_all:tag:users:entries'],
             'ns:'
         );
 
@@ -207,7 +207,7 @@ class PutManyTest extends TestCase
         // This works in cluster because all members go to ONE sorted set (one slot)
         $clusterClient->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', $expectedScore, 'ns:foo', $expectedScore, 'ns:baz')
+            ->with('prefix:_all:tag:users:entries', $expectedScore, 'ns:foo', $expectedScore, 'ns:baz')
             ->andReturn(2);
 
         // Sequential SETEX for each key
@@ -223,15 +223,15 @@ class PutManyTest extends TestCase
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
 
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'bar', 'baz' => 'qux'],
             60,
-            ['tag:users:entries'],
+            ['_all:tag:users:entries'],
             'ns:'
         );
 
@@ -257,10 +257,10 @@ class PutManyTest extends TestCase
             ->andReturn([1, true, 1, false]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'bar', 'baz' => 'qux'],
             60,
-            ['tag:users:entries'],
+            ['_all:tag:users:entries'],
             'ns:'
         );
 
@@ -286,10 +286,10 @@ class PutManyTest extends TestCase
             ->andReturn(false);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'bar'],
             60,
-            ['tag:users:entries'],
+            ['_all:tag:users:entries'],
             'ns:'
         );
 
@@ -319,10 +319,10 @@ class PutManyTest extends TestCase
             ->andReturn([1, true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'bar'],
             0,  // Zero TTL
-            ['tag:users:entries'],
+            ['_all:tag:users:entries'],
             'ns:'
         );
 
@@ -354,10 +354,10 @@ class PutManyTest extends TestCase
             ->andReturn([1, true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             ['count' => 42],
             60,
-            ['tag:users:entries'],
+            ['_all:tag:users:entries'],
             'ns:'
         );
 
@@ -381,7 +381,7 @@ class PutManyTest extends TestCase
         // Custom prefix should be used
         $client->shouldReceive('zadd')
             ->once()
-            ->with('custom:tag:users:entries', $expectedScore, 'ns:foo')
+            ->with('custom:_all:tag:users:entries', $expectedScore, 'ns:foo')
             ->andReturn($client);
 
         $client->shouldReceive('setex')
@@ -393,11 +393,11 @@ class PutManyTest extends TestCase
             ->once()
             ->andReturn([1, true]);
 
-        $store = $this->createStore($connection, 'custom');
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $store = $this->createStore($connection, 'custom:');
+        $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'bar'],
             30,
-            ['tag:users:entries'],
+            ['_all:tag:users:entries'],
             'ns:'
         );
 
@@ -425,13 +425,13 @@ class PutManyTest extends TestCase
         // Variadic ZADD for first tag with all keys
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', $expectedScore, 'ns:a', $expectedScore, 'ns:b', $expectedScore, 'ns:c')
+            ->with('prefix:_all:tag:users:entries', $expectedScore, 'ns:a', $expectedScore, 'ns:b', $expectedScore, 'ns:c')
             ->andReturn($client);
 
         // Variadic ZADD for second tag with all keys
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:posts:entries', $expectedScore, 'ns:a', $expectedScore, 'ns:b', $expectedScore, 'ns:c')
+            ->with('prefix:_all:tag:posts:entries', $expectedScore, 'ns:a', $expectedScore, 'ns:b', $expectedScore, 'ns:c')
             ->andReturn($client);
 
         // SETEX for each key
@@ -456,10 +456,10 @@ class PutManyTest extends TestCase
             ->andReturn([3, 3, true, true, true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             ['a' => 'val-a', 'b' => 'val-b', 'c' => 'val-c'],
             60,
-            ['tag:users:entries', 'tag:posts:entries'],
+            ['_all:tag:users:entries', '_all:tag:posts:entries'],
             'ns:'
         );
 
@@ -497,12 +497,12 @@ class PutManyTest extends TestCase
         // Variadic ZADD for each tag (different slots, separate commands)
         $clusterClient->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', $expectedScore, 'ns:foo', $expectedScore, 'ns:bar')
+            ->with('prefix:_all:tag:users:entries', $expectedScore, 'ns:foo', $expectedScore, 'ns:bar')
             ->andReturn(2);
 
         $clusterClient->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:posts:entries', $expectedScore, 'ns:foo', $expectedScore, 'ns:bar')
+            ->with('prefix:_all:tag:posts:entries', $expectedScore, 'ns:foo', $expectedScore, 'ns:bar')
             ->andReturn(2);
 
         // SETEXs for each key
@@ -518,15 +518,15 @@ class PutManyTest extends TestCase
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
 
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'value1', 'bar' => 'value2'],
             60,
-            ['tag:users:entries', 'tag:posts:entries'],
+            ['_all:tag:users:entries', '_all:tag:posts:entries'],
             'ns:'
         );
 
@@ -570,12 +570,12 @@ class PutManyTest extends TestCase
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
 
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'bar'],
             60,
             [],
@@ -615,7 +615,7 @@ class PutManyTest extends TestCase
 
         $clusterClient->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', $expectedScore, 'ns:foo', $expectedScore, 'ns:bar')
+            ->with('prefix:_all:tag:users:entries', $expectedScore, 'ns:foo', $expectedScore, 'ns:bar')
             ->andReturn(2);
 
         // First SETEX succeeds, second fails
@@ -631,15 +631,15 @@ class PutManyTest extends TestCase
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
 
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'value1', 'bar' => 'value2'],
             60,
-            ['tag:users:entries'],
+            ['_all:tag:users:entries'],
             'ns:'
         );
 
@@ -676,15 +676,15 @@ class PutManyTest extends TestCase
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
 
-        $result = $store->intersectionTagOps()->putMany()->execute(
+        $result = $store->allTagOps()->putMany()->execute(
             [],
             60,
-            ['tag:users:entries'],
+            ['_all:tag:users:entries'],
             'ns:'
         );
 

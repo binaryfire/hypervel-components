@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\UnionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AnyTag;
 
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
@@ -28,11 +28,11 @@ class GetTagItemsTest extends TestCase
         // GetTaggedKeys mock
         $client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(2);
         $client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(['foo', 'bar']);
 
         // MGET to fetch values
@@ -42,7 +42,8 @@ class GetTagItemsTest extends TestCase
             ->andReturn([serialize('value1'), serialize('value2')]);
 
         $redis = $this->createStore($connection);
-        $items = iterator_to_array($redis->unionTagOps()->getTagItems()->execute(['users']));
+        $redis->setTagMode('any');
+        $items = iterator_to_array($redis->anyTagOps()->getTagItems()->execute(['users']));
 
         $this->assertSame(['foo' => 'value1', 'bar' => 'value2'], $items);
     }
@@ -57,11 +58,11 @@ class GetTagItemsTest extends TestCase
 
         $client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(3);
         $client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(['foo', 'bar', 'baz']);
 
         // bar doesn't exist (returns null)
@@ -71,7 +72,8 @@ class GetTagItemsTest extends TestCase
             ->andReturn([serialize('value1'), null, serialize('value3')]);
 
         $redis = $this->createStore($connection);
-        $items = iterator_to_array($redis->unionTagOps()->getTagItems()->execute(['users']));
+        $redis->setTagMode('any');
+        $items = iterator_to_array($redis->anyTagOps()->getTagItems()->execute(['users']));
 
         $this->assertSame(['foo' => 'value1', 'baz' => 'value3'], $items);
     }
@@ -87,21 +89,21 @@ class GetTagItemsTest extends TestCase
         // First tag 'users' has keys foo, bar
         $client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(2);
         $client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(['foo', 'bar']);
 
         // Second tag 'posts' has keys bar, baz (bar is duplicate)
         $client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:posts:entries')
+            ->with('prefix:_any:tag:posts:entries')
             ->andReturn(2);
         $client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:posts:entries')
+            ->with('prefix:_any:tag:posts:entries')
             ->andReturn(['bar', 'baz']);
 
         // MGET called twice (batches of keys from each tag)
@@ -115,7 +117,8 @@ class GetTagItemsTest extends TestCase
             ->andReturn([serialize('v3')]);
 
         $redis = $this->createStore($connection);
-        $items = iterator_to_array($redis->unionTagOps()->getTagItems()->execute(['users', 'posts']));
+        $redis->setTagMode('any');
+        $items = iterator_to_array($redis->anyTagOps()->getTagItems()->execute(['users', 'posts']));
 
         // bar should only appear once
         $this->assertCount(3, $items);

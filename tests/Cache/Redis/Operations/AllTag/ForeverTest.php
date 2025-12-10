@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AllTag;
 
 use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\Pool\RedisPool;
@@ -38,7 +38,7 @@ class ForeverTest extends TestCase
         // ZADD for tag with score -1 (forever)
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', -1, 'mykey')
+            ->with('prefix:_all:tag:users:entries', -1, 'mykey')
             ->andReturn($client);
 
         // SET for cache value (no expiration)
@@ -52,10 +52,10 @@ class ForeverTest extends TestCase
             ->andReturn([1, true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->forever()->execute(
+        $result = $store->allTagOps()->forever()->execute(
             'mykey',
             'myvalue',
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
         $this->assertTrue($result);
@@ -74,11 +74,11 @@ class ForeverTest extends TestCase
         // ZADD for each tag with score -1
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', -1, 'mykey')
+            ->with('prefix:_all:tag:users:entries', -1, 'mykey')
             ->andReturn($client);
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:posts:entries', -1, 'mykey')
+            ->with('prefix:_all:tag:posts:entries', -1, 'mykey')
             ->andReturn($client);
 
         // SET for cache value
@@ -92,10 +92,10 @@ class ForeverTest extends TestCase
             ->andReturn([1, 1, true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->forever()->execute(
+        $result = $store->allTagOps()->forever()->execute(
             'mykey',
             'myvalue',
-            ['tag:users:entries', 'tag:posts:entries']
+            ['_all:tag:users:entries', '_all:tag:posts:entries']
         );
 
         $this->assertTrue($result);
@@ -122,7 +122,7 @@ class ForeverTest extends TestCase
             ->andReturn([true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->forever()->execute(
+        $result = $store->allTagOps()->forever()->execute(
             'mykey',
             'myvalue',
             []
@@ -161,7 +161,7 @@ class ForeverTest extends TestCase
         // Sequential ZADD with score -1
         $clusterClient->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', -1, 'mykey')
+            ->with('prefix:_all:tag:users:entries', -1, 'mykey')
             ->andReturn(1);
 
         // Sequential SET
@@ -172,15 +172,15 @@ class ForeverTest extends TestCase
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
 
-        $result = $store->intersectionTagOps()->forever()->execute(
+        $result = $store->allTagOps()->forever()->execute(
             'mykey',
             'myvalue',
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
         $this->assertTrue($result);
@@ -205,10 +205,10 @@ class ForeverTest extends TestCase
             ->andReturn([1, false]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->forever()->execute(
+        $result = $store->allTagOps()->forever()->execute(
             'mykey',
             'myvalue',
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
         $this->assertFalse($result);
@@ -226,7 +226,7 @@ class ForeverTest extends TestCase
 
         $client->shouldReceive('zadd')
             ->once()
-            ->with('custom:tag:users:entries', -1, 'mykey')
+            ->with('custom:_all:tag:users:entries', -1, 'mykey')
             ->andReturn($client);
 
         $client->shouldReceive('set')
@@ -238,11 +238,11 @@ class ForeverTest extends TestCase
             ->once()
             ->andReturn([1, true]);
 
-        $store = $this->createStore($connection, 'custom');
-        $result = $store->intersectionTagOps()->forever()->execute(
+        $store = $this->createStore($connection, 'custom:');
+        $result = $store->allTagOps()->forever()->execute(
             'mykey',
             'myvalue',
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
         $this->assertTrue($result);

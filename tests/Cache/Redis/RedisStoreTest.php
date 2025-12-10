@@ -7,6 +7,7 @@ namespace Hypervel\Tests\Cache\Redis;
 use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\RedisFactory;
 use Hyperf\Redis\RedisProxy;
+use Hypervel\Cache\Redis\TagMode;
 use Hypervel\Cache\RedisLock;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
@@ -35,7 +36,7 @@ class RedisStoreTest extends TestCase
         $redis = $this->createStore($connection);
 
         $this->assertSame('prefix:', $redis->getPrefix());
-        $redis->setPrefix('foo');
+        $redis->setPrefix('foo:');
         $this->assertSame('foo:', $redis->getPrefix());
         $redis->setPrefix('');
         $this->assertEmpty($redis->getPrefix());
@@ -56,7 +57,7 @@ class RedisStoreTest extends TestCase
         $poolFactory1 = $this->createPoolFactory($connection1, 'conn1');
         $redis = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'conn1',
             $poolFactory1
         );
@@ -71,7 +72,7 @@ class RedisStoreTest extends TestCase
         // that a new store with different connection gets different values.
         $redis2 = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'conn2',
             $poolFactory2
         );
@@ -93,8 +94,8 @@ class RedisStoreTest extends TestCase
         // First get with original prefix
         $this->assertSame('old', $redis->get('foo'));
 
-        // Change prefix
-        $redis->setPrefix('newprefix');
+        // Change prefix (include colon since setPrefix stores as-is)
+        $redis->setPrefix('newprefix:');
 
         // Second get should use new prefix
         $this->assertSame('new', $redis->get('foo'));
@@ -103,14 +104,14 @@ class RedisStoreTest extends TestCase
     /**
      * @test
      */
-    public function testTagsReturnsIntersectionTaggedCache(): void
+    public function testTagsReturnsAllTaggedCache(): void
     {
         $connection = $this->mockConnection();
         $redis = $this->createStore($connection);
 
         $tagged = $redis->tags(['users', 'posts']);
 
-        $this->assertInstanceOf(\Hypervel\Cache\Redis\IntersectionTaggedCache::class, $tagged);
+        $this->assertInstanceOf(\Hypervel\Cache\Redis\AllTaggedCache::class, $tagged);
     }
 
     /**
@@ -123,7 +124,7 @@ class RedisStoreTest extends TestCase
 
         $tagged = $redis->tags('users');
 
-        $this->assertInstanceOf(\Hypervel\Cache\Redis\IntersectionTaggedCache::class, $tagged);
+        $this->assertInstanceOf(\Hypervel\Cache\Redis\AllTaggedCache::class, $tagged);
     }
 
     /**
@@ -136,73 +137,73 @@ class RedisStoreTest extends TestCase
 
         $tagged = $redis->tags('users', 'posts', 'comments');
 
-        $this->assertInstanceOf(\Hypervel\Cache\Redis\IntersectionTaggedCache::class, $tagged);
+        $this->assertInstanceOf(\Hypervel\Cache\Redis\AllTaggedCache::class, $tagged);
     }
 
     /**
      * @test
      */
-    public function testDefaultTaggingModeIsIntersection(): void
+    public function testDefaultTagModeIsAll(): void
     {
         $connection = $this->mockConnection();
         $redis = $this->createStore($connection);
 
-        $this->assertSame('intersection', $redis->getTaggingMode());
+        $this->assertSame(TagMode::All, $redis->getTagMode());
     }
 
     /**
      * @test
      */
-    public function testSetTaggingModeReturnsStoreInstance(): void
+    public function testSetTagModeReturnsStoreInstance(): void
     {
         $connection = $this->mockConnection();
         $redis = $this->createStore($connection);
 
-        $result = $redis->setTaggingMode('union');
+        $result = $redis->setTagMode('any');
 
         $this->assertSame($redis, $result);
-        $this->assertSame('union', $redis->getTaggingMode());
+        $this->assertSame(TagMode::Any, $redis->getTagMode());
     }
 
     /**
      * @test
      */
-    public function testTagsReturnsUnionTaggedCacheWhenInUnionMode(): void
+    public function testTagsReturnsAnyTaggedCacheWhenInAnyMode(): void
     {
         $connection = $this->mockConnection();
         $redis = $this->createStore($connection);
-        $redis->setTaggingMode('union');
+        $redis->setTagMode('any');
 
         $tagged = $redis->tags(['users', 'posts']);
 
-        $this->assertInstanceOf(\Hypervel\Cache\Redis\UnionTaggedCache::class, $tagged);
+        $this->assertInstanceOf(\Hypervel\Cache\Redis\AnyTaggedCache::class, $tagged);
     }
 
     /**
      * @test
      */
-    public function testTagsReturnsIntersectionTaggedCacheWhenInIntersectionMode(): void
+    public function testTagsReturnsAllTaggedCacheWhenInAllMode(): void
     {
         $connection = $this->mockConnection();
         $redis = $this->createStore($connection);
-        $redis->setTaggingMode('intersection');
+        $redis->setTagMode('all');
 
         $tagged = $redis->tags(['users', 'posts']);
 
-        $this->assertInstanceOf(\Hypervel\Cache\Redis\IntersectionTaggedCache::class, $tagged);
+        $this->assertInstanceOf(\Hypervel\Cache\Redis\AllTaggedCache::class, $tagged);
     }
 
     /**
      * @test
      */
-    public function testSetTaggingModeFallsBackToIntersectionForInvalidMode(): void
+    public function testSetTagModeFallsBackToAllForInvalidMode(): void
     {
         $connection = $this->mockConnection();
         $redis = $this->createStore($connection);
 
-        $redis->setTaggingMode('invalid');
+        $redis->setTagMode('invalid');
 
-        $this->assertSame('intersection', $redis->getTaggingMode());
+        $this->assertSame(TagMode::All, $redis->getTagMode());
     }
 
     /**
@@ -217,7 +218,7 @@ class RedisStoreTest extends TestCase
 
         $redis = new RedisStore(
             $redisFactory,
-            'prefix',
+            'prefix:',
             'default',
             $this->createPoolFactory($connection)
         );
@@ -239,7 +240,7 @@ class RedisStoreTest extends TestCase
 
         $redis = new RedisStore(
             $redisFactory,
-            'prefix',
+            'prefix:',
             'default',
             $this->createPoolFactory($connection)
         );
@@ -261,7 +262,7 @@ class RedisStoreTest extends TestCase
 
         $redis = new RedisStore(
             $redisFactory,
-            'prefix',
+            'prefix:',
             'default',
             $this->createPoolFactory($connection)
         );
@@ -298,7 +299,7 @@ class RedisStoreTest extends TestCase
 
         $redis = new RedisStore(
             $redisFactory,
-            'prefix',
+            'prefix:',
             'default',
             $this->createPoolFactory($connection)
         );
@@ -319,7 +320,7 @@ class RedisStoreTest extends TestCase
 
         $redis = new RedisStore(
             $redisFactory,
-            'prefix',
+            'prefix:',
             'default',
             $this->createPoolFactory($connection)
         );
@@ -339,7 +340,7 @@ class RedisStoreTest extends TestCase
 
         $redis = new RedisStore(
             $redisFactory,
-            'prefix',
+            'prefix:',
             'default',
             $this->createPoolFactory($connection)
         );

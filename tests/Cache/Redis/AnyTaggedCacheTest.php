@@ -6,23 +6,23 @@ namespace Hypervel\Tests\Cache\Redis;
 
 use BadMethodCallException;
 use Generator;
-use Hypervel\Cache\Redis\UnionTaggedCache;
-use Hypervel\Cache\Redis\UnionTagSet;
+use Hypervel\Cache\Redis\AnyTaggedCache;
+use Hypervel\Cache\Redis\AnyTagSet;
 use Hypervel\Cache\TaggedCache;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
 
 /**
- * Tests for UnionTaggedCache behavior.
+ * Tests for AnyTaggedCache behavior.
  *
  * These tests verify the high-level API behavior of union-mode tagged cache operations.
- * For detailed operation tests, see tests/Cache/Redis/Operations/UnionTags/.
+ * For detailed operation tests, see tests/Cache/Redis/Operations/AnyTag/.
  *
  * @internal
  * @coversNothing
  */
-class UnionTaggedCacheTest extends TestCase
+class AnyTaggedCacheTest extends TestCase
 {
     use MocksRedisConnections;
 
@@ -33,10 +33,10 @@ class UnionTaggedCacheTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
+        $cache = $store->setTagMode('any')->tags(['users', 'posts']);
 
         $this->assertInstanceOf(TaggedCache::class, $cache);
-        $this->assertInstanceOf(UnionTaggedCache::class, $cache);
+        $this->assertInstanceOf(AnyTaggedCache::class, $cache);
     }
 
     /**
@@ -46,10 +46,10 @@ class UnionTaggedCacheTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
+        $cache = $store->setTagMode('any')->tags(['users', 'posts']);
 
         $this->expectException(BadMethodCallException::class);
-        $this->expectExceptionMessage('Cannot get items via tags in union mode');
+        $this->expectExceptionMessage('Cannot get items via tags in any mode');
 
         $cache->get('key');
     }
@@ -61,10 +61,10 @@ class UnionTaggedCacheTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
+        $cache = $store->setTagMode('any')->tags(['users', 'posts']);
 
         $this->expectException(BadMethodCallException::class);
-        $this->expectExceptionMessage('Cannot get items via tags in union mode');
+        $this->expectExceptionMessage('Cannot get items via tags in any mode');
 
         $cache->many(['key1', 'key2']);
     }
@@ -76,10 +76,10 @@ class UnionTaggedCacheTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
+        $cache = $store->setTagMode('any')->tags(['users', 'posts']);
 
         $this->expectException(BadMethodCallException::class);
-        $this->expectExceptionMessage('Cannot check existence via tags in union mode');
+        $this->expectExceptionMessage('Cannot check existence via tags in any mode');
 
         $cache->has('key');
     }
@@ -91,10 +91,10 @@ class UnionTaggedCacheTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
+        $cache = $store->setTagMode('any')->tags(['users', 'posts']);
 
         $this->expectException(BadMethodCallException::class);
-        $this->expectExceptionMessage('Cannot pull items via tags in union mode');
+        $this->expectExceptionMessage('Cannot pull items via tags in any mode');
 
         $cache->pull('key');
     }
@@ -106,10 +106,10 @@ class UnionTaggedCacheTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
+        $cache = $store->setTagMode('any')->tags(['users', 'posts']);
 
         $this->expectException(BadMethodCallException::class);
-        $this->expectExceptionMessage('Cannot forget items via tags in union mode');
+        $this->expectExceptionMessage('Cannot forget items via tags in any mode');
 
         $cache->forget('key');
     }
@@ -131,7 +131,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(true);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users', 'posts'])->put('mykey', 'myvalue', 60);
+        $result = $store->setTagMode('any')->tags(['users', 'posts'])->put('mykey', 'myvalue', 60);
 
         $this->assertTrue($result);
     }
@@ -153,7 +153,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(true);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users', 'posts'])->put('mykey', 'myvalue', null);
+        $result = $store->setTagMode('any')->tags(['users', 'posts'])->put('mykey', 'myvalue', null);
 
         $this->assertTrue($result);
     }
@@ -165,7 +165,7 @@ class UnionTaggedCacheTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
+        $cache = $store->setTagMode('any')->tags(['users', 'posts']);
 
         $result = $cache->put('mykey', 'myvalue', 0);
 
@@ -193,7 +193,7 @@ class UnionTaggedCacheTest extends TestCase
         $client->shouldReceive('zadd')->andReturn($client);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->put(['key1' => 'value1', 'key2' => 'value2'], 60);
+        $result = $store->setTagMode('any')->tags(['users'])->put(['key1' => 'value1', 'key2' => 'value2'], 60);
 
         $this->assertTrue($result);
     }
@@ -219,7 +219,7 @@ class UnionTaggedCacheTest extends TestCase
         $client->shouldReceive('zadd')->andReturn($client);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->putMany(['key1' => 'value1', 'key2' => 'value2'], 120);
+        $result = $store->setTagMode('any')->tags(['users'])->putMany(['key1' => 'value1', 'key2' => 'value2'], 120);
 
         $this->assertTrue($result);
     }
@@ -241,7 +241,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(true);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->putMany(['key1' => 'value1', 'key2' => 'value2'], null);
+        $result = $store->setTagMode('any')->tags(['users'])->putMany(['key1' => 'value1', 'key2' => 'value2'], null);
 
         $this->assertTrue($result);
     }
@@ -253,7 +253,7 @@ class UnionTaggedCacheTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $cache = $store->setTaggingMode('union')->tags(['users']);
+        $cache = $store->setTagMode('any')->tags(['users']);
 
         $result = $cache->putMany(['key1' => 'value1'], 0);
 
@@ -277,7 +277,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(true);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->add('mykey', 'myvalue', 60);
+        $result = $store->setTagMode('any')->tags(['users'])->add('mykey', 'myvalue', 60);
 
         $this->assertTrue($result);
     }
@@ -305,7 +305,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(true);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->add('mykey', 'myvalue', null);
+        $result = $store->setTagMode('any')->tags(['users'])->add('mykey', 'myvalue', null);
 
         $this->assertTrue($result);
     }
@@ -317,7 +317,7 @@ class UnionTaggedCacheTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $cache = $store->setTaggingMode('union')->tags(['users']);
+        $cache = $store->setTagMode('any')->tags(['users']);
 
         $result = $cache->add('mykey', 'myvalue', 0);
 
@@ -341,7 +341,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(true);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->forever('mykey', 'myvalue');
+        $result = $store->setTagMode('any')->tags(['users'])->forever('mykey', 'myvalue');
 
         $this->assertTrue($result);
     }
@@ -360,7 +360,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(5);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->increment('counter');
+        $result = $store->setTagMode('any')->tags(['users'])->increment('counter');
 
         $this->assertSame(5, $result);
     }
@@ -378,7 +378,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(15);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->increment('counter', 10);
+        $result = $store->setTagMode('any')->tags(['users'])->increment('counter', 10);
 
         $this->assertSame(15, $result);
     }
@@ -397,7 +397,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(3);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->decrement('counter');
+        $result = $store->setTagMode('any')->tags(['users'])->decrement('counter');
 
         $this->assertSame(3, $result);
     }
@@ -415,7 +415,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(0);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->decrement('counter', 5);
+        $result = $store->setTagMode('any')->tags(['users'])->decrement('counter', 5);
 
         $this->assertSame(0, $result);
     }
@@ -444,7 +444,7 @@ class UnionTaggedCacheTest extends TestCase
         $client->shouldReceive('exec')->andReturn([2, 1]);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->flush();
+        $result = $store->setTagMode('any')->tags(['users'])->flush();
 
         $this->assertTrue($result);
     }
@@ -463,7 +463,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(serialize('cached_value'));
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->remember('mykey', 60, fn () => 'new_value');
+        $result = $store->setTagMode('any')->tags(['users'])->remember('mykey', 60, fn () => 'new_value');
 
         $this->assertSame('cached_value', $result);
     }
@@ -489,7 +489,7 @@ class UnionTaggedCacheTest extends TestCase
 
         $callCount = 0;
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->remember('mykey', 60, function () use (&$callCount) {
+        $result = $store->setTagMode('any')->tags(['users'])->remember('mykey', 60, function () use (&$callCount) {
             $callCount++;
 
             return 'computed_value';
@@ -513,7 +513,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(serialize('cached_value'));
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->rememberForever('mykey', fn () => 'new_value');
+        $result = $store->setTagMode('any')->tags(['users'])->rememberForever('mykey', fn () => 'new_value');
 
         $this->assertSame('cached_value', $result);
     }
@@ -538,7 +538,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(true);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->rememberForever('mykey', fn () => 'computed_value');
+        $result = $store->setTagMode('any')->tags(['users'])->rememberForever('mykey', fn () => 'computed_value');
 
         $this->assertSame('computed_value', $result);
     }
@@ -546,13 +546,13 @@ class UnionTaggedCacheTest extends TestCase
     /**
      * @test
      */
-    public function testGetUnionTagsReturnsTagSet(): void
+    public function testGetTagsReturnsTagSet(): void
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $cache = $store->setTaggingMode('union')->tags(['users', 'posts']);
+        $cache = $store->setTagMode('any')->tags(['users', 'posts']);
 
-        $this->assertInstanceOf(UnionTagSet::class, $cache->getUnionTags());
+        $this->assertInstanceOf(AnyTagSet::class, $cache->getTags());
     }
 
     /**
@@ -562,14 +562,14 @@ class UnionTaggedCacheTest extends TestCase
     {
         $connection = $this->mockConnection();
 
-        // In union mode, keys are NOT namespaced by tags
+        // In any mode, keys are NOT namespaced by tags
         $connection->shouldReceive('get')
             ->once()
             ->with('prefix:mykey') // Should NOT have tag namespace prefix
             ->andReturn(serialize('value'));
 
         $store = $this->createStore($connection);
-        $store->setTaggingMode('union')->tags(['users'])->remember('mykey', 60, fn () => 'fallback');
+        $store->setTagMode('any')->tags(['users'])->remember('mykey', 60, fn () => 'fallback');
     }
 
     /**
@@ -588,7 +588,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(false);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->increment('counter');
+        $result = $store->setTagMode('any')->tags(['users'])->increment('counter');
 
         $this->assertFalse($result);
     }
@@ -609,7 +609,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn(false);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->decrement('counter');
+        $result = $store->setTagMode('any')->tags(['users'])->decrement('counter');
 
         $this->assertFalse($result);
     }
@@ -630,7 +630,7 @@ class UnionTaggedCacheTest extends TestCase
         $this->expectExceptionMessage('Callback failed');
 
         $store = $this->createStore($connection);
-        $store->setTaggingMode('union')->tags(['users'])->remember('mykey', 60, function () {
+        $store->setTagMode('any')->tags(['users'])->remember('mykey', 60, function () {
             throw new \RuntimeException('Callback failed');
         });
     }
@@ -651,7 +651,7 @@ class UnionTaggedCacheTest extends TestCase
         $this->expectExceptionMessage('Forever callback failed');
 
         $store = $this->createStore($connection);
-        $store->setTaggingMode('union')->tags(['users'])->rememberForever('mykey', function () {
+        $store->setTagMode('any')->tags(['users'])->rememberForever('mykey', function () {
             throw new \RuntimeException('Forever callback failed');
         });
     }
@@ -671,7 +671,7 @@ class UnionTaggedCacheTest extends TestCase
 
         $callCount = 0;
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->remember('mykey', 60, function () use (&$callCount) {
+        $result = $store->setTagMode('any')->tags(['users'])->remember('mykey', 60, function () use (&$callCount) {
             $callCount++;
 
             return 'new_value';
@@ -705,7 +705,7 @@ class UnionTaggedCacheTest extends TestCase
             ->andReturn([serialize('value1'), serialize('value2')]);
 
         $store = $this->createStore($connection);
-        $result = $store->setTaggingMode('union')->tags(['users'])->items();
+        $result = $store->setTagMode('any')->tags(['users'])->items();
 
         $this->assertInstanceOf(Generator::class, $result);
 

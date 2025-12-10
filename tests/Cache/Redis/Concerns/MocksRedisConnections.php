@@ -111,7 +111,7 @@ trait MocksRedisConnections
      */
     protected function createStore(
         m\MockInterface|RedisConnection $connection,
-        string $prefix = 'prefix',
+        string $prefix = 'prefix:',
         string $connectionName = 'default'
     ): RedisStore {
         return new RedisStore(

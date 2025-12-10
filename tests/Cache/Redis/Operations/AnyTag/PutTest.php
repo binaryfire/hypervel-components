@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\UnionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AnyTag;
 
 use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\Pool\RedisPool;
@@ -54,7 +54,8 @@ class PutTest extends TestCase
 
         // Mock smembers for old tags lookup (Lua script uses this internally but we mock the full execution)
         $redis = $this->createStore($connection);
-        $result = $redis->unionTagOps()->put()->execute('foo', 'bar', 60, ['users', 'posts']);
+        $redis->setTagMode('any');
+        $result = $redis->anyTagOps()->put()->execute('foo', 'bar', 60, ['users', 'posts']);
         $this->assertTrue($result);
     }
 
@@ -103,12 +104,13 @@ class PutTest extends TestCase
 
         $redis = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
+        $redis->setTagMode('any');
 
-        $result = $redis->unionTagOps()->put()->execute('foo', 'bar', 60, ['users', 'posts']);
+        $result = $redis->anyTagOps()->put()->execute('foo', 'bar', 60, ['users', 'posts']);
         $this->assertTrue($result);
     }
 
@@ -128,7 +130,8 @@ class PutTest extends TestCase
             ->andReturn(true);
 
         $redis = $this->createStore($connection);
-        $result = $redis->unionTagOps()->put()->execute('foo', 'bar', 60, []);
+        $redis->setTagMode('any');
+        $result = $redis->anyTagOps()->put()->execute('foo', 'bar', 60, []);
         $this->assertTrue($result);
     }
 
@@ -153,7 +156,8 @@ class PutTest extends TestCase
             ->andReturn(true);
 
         $redis = $this->createStore($connection);
-        $result = $redis->unionTagOps()->put()->execute('foo', 42, 60, ['numbers']);
+        $redis->setTagMode('any');
+        $result = $redis->anyTagOps()->put()->execute('foo', 42, 60, ['numbers']);
         $this->assertTrue($result);
     }
 }

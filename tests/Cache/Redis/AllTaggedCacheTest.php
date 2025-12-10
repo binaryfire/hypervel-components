@@ -11,15 +11,15 @@ use Mockery as m;
 use Redis;
 
 /**
- * Tests for IntersectionTaggedCache behavior.
+ * Tests for AllTaggedCache behavior.
  *
  * These tests verify the high-level API behavior of tagged cache operations.
- * For detailed operation tests, see tests/Cache/Redis/Operations/IntersectionTags/.
+ * For detailed operation tests, see tests/Cache/Redis/Operations/AllTag/.
  *
  * @internal
  * @coversNothing
  */
-class IntersectionTaggedCacheTest extends TestCase
+class AllTaggedCacheTest extends TestCase
 {
     use MocksRedisConnections;
 
@@ -33,11 +33,11 @@ class IntersectionTaggedCacheTest extends TestCase
 
         $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $key = sha1('tag:people:entries|tag:author:entries') . ':name';
+        $key = sha1('_all:tag:people:entries|_all:tag:author:entries') . ':name';
 
         // Combined operation: ZADD for both tags + SET (forever uses score -1)
-        $client->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturn($client);
-        $client->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:people:entries', -1, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:author:entries', -1, $key)->andReturn($client);
         $client->shouldReceive('set')->once()->with("prefix:{$key}", serialize('Sally'))->andReturn($client);
         $client->shouldReceive('exec')->once()->andReturn([1, 1, true]);
 
@@ -57,11 +57,11 @@ class IntersectionTaggedCacheTest extends TestCase
 
         $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $key = sha1('tag:people:entries|tag:author:entries') . ':age';
+        $key = sha1('_all:tag:people:entries|_all:tag:author:entries') . ':age';
 
         // Numeric values are NOT serialized (optimization)
-        $client->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', -1, $key)->andReturn($client);
-        $client->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', -1, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:people:entries', -1, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:author:entries', -1, $key)->andReturn($client);
         $client->shouldReceive('set')->once()->with("prefix:{$key}", 30)->andReturn($client);
         $client->shouldReceive('exec')->once()->andReturn([1, 1, true]);
 
@@ -81,10 +81,10 @@ class IntersectionTaggedCacheTest extends TestCase
 
         $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $key = sha1('tag:votes:entries') . ':person-1';
+        $key = sha1('_all:tag:votes:entries') . ':person-1';
 
         // Combined operation: ZADD NX + INCRBY in single pipeline
-        $client->shouldReceive('zadd')->once()->with('prefix:tag:votes:entries', ['NX'], -1, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:votes:entries', ['NX'], -1, $key)->andReturn($client);
         $client->shouldReceive('incrby')->once()->with("prefix:{$key}", 1)->andReturn($client);
         $client->shouldReceive('exec')->once()->andReturn([1, 1]);
 
@@ -104,10 +104,10 @@ class IntersectionTaggedCacheTest extends TestCase
 
         $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $key = sha1('tag:votes:entries') . ':person-1';
+        $key = sha1('_all:tag:votes:entries') . ':person-1';
 
         // Combined operation: ZADD NX + DECRBY in single pipeline
-        $client->shouldReceive('zadd')->once()->with('prefix:tag:votes:entries', ['NX'], -1, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:votes:entries', ['NX'], -1, $key)->andReturn($client);
         $client->shouldReceive('decrby')->once()->with("prefix:{$key}", 1)->andReturn($client);
         $client->shouldReceive('exec')->once()->andReturn([1, 9]);
 
@@ -132,7 +132,7 @@ class IntersectionTaggedCacheTest extends TestCase
         // FlushStaleEntries uses pipeline for zRemRangeByScore
         $client->shouldReceive('zRemRangeByScore')
             ->once()
-            ->with('prefix:tag:people:entries', '0', (string) now()->timestamp)
+            ->with('prefix:_all:tag:people:entries', '0', (string) now()->timestamp)
             ->andReturn($client);
         $client->shouldReceive('exec')->once()->andReturn([0]);
 
@@ -152,12 +152,12 @@ class IntersectionTaggedCacheTest extends TestCase
 
         $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $key = sha1('tag:people:entries|tag:author:entries') . ':name';
+        $key = sha1('_all:tag:people:entries|_all:tag:author:entries') . ':name';
         $expectedScore = now()->timestamp + 5;
 
         // Combined operation: ZADD for both tags + SETEX in single pipeline
-        $client->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', $expectedScore, $key)->andReturn($client);
-        $client->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', $expectedScore, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:people:entries', $expectedScore, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:author:entries', $expectedScore, $key)->andReturn($client);
         $client->shouldReceive('setex')->once()->with("prefix:{$key}", 5, serialize('Sally'))->andReturn($client);
         $client->shouldReceive('exec')->once()->andReturn([1, 1, true]);
 
@@ -179,12 +179,12 @@ class IntersectionTaggedCacheTest extends TestCase
 
         $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $key = sha1('tag:people:entries|tag:author:entries') . ':age';
+        $key = sha1('_all:tag:people:entries|_all:tag:author:entries') . ':age';
         $expectedScore = now()->timestamp + 5;
 
         // Numeric values are NOT serialized
-        $client->shouldReceive('zadd')->once()->with('prefix:tag:people:entries', $expectedScore, $key)->andReturn($client);
-        $client->shouldReceive('zadd')->once()->with('prefix:tag:author:entries', $expectedScore, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:people:entries', $expectedScore, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:author:entries', $expectedScore, $key)->andReturn($client);
         $client->shouldReceive('setex')->once()->with("prefix:{$key}", 5, 30)->andReturn($client);
         $client->shouldReceive('exec')->once()->andReturn([1, 1, true]);
 
@@ -206,20 +206,20 @@ class IntersectionTaggedCacheTest extends TestCase
 
         $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $namespace = sha1('tag:people:entries|tag:author:entries') . ':';
+        $namespace = sha1('_all:tag:people:entries|_all:tag:author:entries') . ':';
         $expectedScore = now()->timestamp + 5;
 
         // PutMany uses variadic ZADD: one command per tag with all keys as members
         // First tag (people) gets both keys in one ZADD
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:people:entries', $expectedScore, $namespace . 'name', $expectedScore, $namespace . 'age')
+            ->with('prefix:_all:tag:people:entries', $expectedScore, $namespace . 'name', $expectedScore, $namespace . 'age')
             ->andReturn($client);
 
         // Second tag (author) gets both keys in one ZADD
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:author:entries', $expectedScore, $namespace . 'name', $expectedScore, $namespace . 'age')
+            ->with('prefix:_all:tag:author:entries', $expectedScore, $namespace . 'name', $expectedScore, $namespace . 'age')
             ->andReturn($client);
 
         // SETEX for each key
@@ -248,7 +248,7 @@ class IntersectionTaggedCacheTest extends TestCase
         // Flush operation scans tag sets and deletes entries
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:people:entries', null, '*', 1000)
+            ->with('prefix:_all:tag:people:entries', null, '*', 1000)
             ->andReturnUsing(function ($key, &$cursor) {
                 $cursor = 0;
 
@@ -256,7 +256,7 @@ class IntersectionTaggedCacheTest extends TestCase
             });
         $connection->shouldReceive('zScan')
             ->once()
-            ->with('prefix:tag:people:entries', 0, '*', 1000)
+            ->with('prefix:_all:tag:people:entries', 0, '*', 1000)
             ->andReturnNull();
 
         // Delete cache entries (on connection, not client)
@@ -268,7 +268,7 @@ class IntersectionTaggedCacheTest extends TestCase
         // Delete tag set (on connection, not client)
         $connection->shouldReceive('del')
             ->once()
-            ->with('prefix:tag:people:entries')
+            ->with('prefix:_all:tag:people:entries')
             ->andReturn(1);
 
         $store = $this->createStore($connection);
@@ -287,10 +287,10 @@ class IntersectionTaggedCacheTest extends TestCase
 
         $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $key = sha1('tag:users:entries') . ':name';
+        $key = sha1('_all:tag:users:entries') . ':name';
 
         // Null TTL should call forever (ZADD with -1 + SET)
-        $client->shouldReceive('zadd')->once()->with('prefix:tag:users:entries', -1, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:users:entries', -1, $key)->andReturn($client);
         $client->shouldReceive('set')->once()->with("prefix:{$key}", serialize('John'))->andReturn($client);
         $client->shouldReceive('exec')->once()->andReturn([1, true]);
 
@@ -307,7 +307,7 @@ class IntersectionTaggedCacheTest extends TestCase
     {
         $connection = $this->mockConnection();
 
-        $key = sha1('tag:users:entries') . ':name';
+        $key = sha1('_all:tag:users:entries') . ':name';
 
         // Zero TTL should delete the key (Forget operation uses connection)
         $connection->shouldReceive('del')
@@ -331,9 +331,9 @@ class IntersectionTaggedCacheTest extends TestCase
 
         $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $key = sha1('tag:counters:entries') . ':hits';
+        $key = sha1('_all:tag:counters:entries') . ':hits';
 
-        $client->shouldReceive('zadd')->once()->with('prefix:tag:counters:entries', ['NX'], -1, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:counters:entries', ['NX'], -1, $key)->andReturn($client);
         $client->shouldReceive('incrby')->once()->with("prefix:{$key}", 5)->andReturn($client);
         $client->shouldReceive('exec')->once()->andReturn([1, 15]);
 
@@ -353,9 +353,9 @@ class IntersectionTaggedCacheTest extends TestCase
 
         $client->shouldReceive('pipeline')->once()->andReturn($client);
 
-        $key = sha1('tag:counters:entries') . ':stock';
+        $key = sha1('_all:tag:counters:entries') . ':stock';
 
-        $client->shouldReceive('zadd')->once()->with('prefix:tag:counters:entries', ['NX'], -1, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:counters:entries', ['NX'], -1, $key)->andReturn($client);
         $client->shouldReceive('decrby')->once()->with("prefix:{$key}", 3)->andReturn($client);
         $client->shouldReceive('exec')->once()->andReturn([0, 7]);
 

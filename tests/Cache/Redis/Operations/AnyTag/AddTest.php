@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\UnionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AnyTag;
 
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
@@ -42,7 +42,8 @@ class AddTest extends TestCase
             ->andReturn(true);
 
         $redis = $this->createStore($connection);
-        $result = $redis->unionTagOps()->add()->execute('foo', 'bar', 60, ['users']);
+        $redis->setTagMode('any');
+        $result = $redis->anyTagOps()->add()->execute('foo', 'bar', 60, ['users']);
         $this->assertTrue($result);
     }
 
@@ -63,7 +64,8 @@ class AddTest extends TestCase
             ->andReturn(false); // Key exists
 
         $redis = $this->createStore($connection);
-        $result = $redis->unionTagOps()->add()->execute('foo', 'bar', 60, ['users']);
+        $redis->setTagMode('any');
+        $result = $redis->anyTagOps()->add()->execute('foo', 'bar', 60, ['users']);
         $this->assertFalse($result);
     }
 }

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AllTag;
 
 use Carbon\Carbon;
 use Hyperf\Redis\Pool\PoolFactory;
@@ -41,7 +41,7 @@ class PutTest extends TestCase
         // ZADD for tag
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', now()->timestamp + 60, 'mykey')
+            ->with('prefix:_all:tag:users:entries', now()->timestamp + 60, 'mykey')
             ->andReturn($client);
 
         // SETEX for cache value
@@ -55,11 +55,11 @@ class PutTest extends TestCase
             ->andReturn([1, true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->put()->execute(
+        $result = $store->allTagOps()->put()->execute(
             'mykey',
             'myvalue',
             60,
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
         $this->assertTrue($result);
@@ -82,11 +82,11 @@ class PutTest extends TestCase
         // ZADD for each tag
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', $expectedScore, 'mykey')
+            ->with('prefix:_all:tag:users:entries', $expectedScore, 'mykey')
             ->andReturn($client);
         $client->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:posts:entries', $expectedScore, 'mykey')
+            ->with('prefix:_all:tag:posts:entries', $expectedScore, 'mykey')
             ->andReturn($client);
 
         // SETEX for cache value
@@ -100,11 +100,11 @@ class PutTest extends TestCase
             ->andReturn([1, 1, true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->put()->execute(
+        $result = $store->allTagOps()->put()->execute(
             'mykey',
             'myvalue',
             120,
-            ['tag:users:entries', 'tag:posts:entries']
+            ['_all:tag:users:entries', '_all:tag:posts:entries']
         );
 
         $this->assertTrue($result);
@@ -132,7 +132,7 @@ class PutTest extends TestCase
             ->andReturn([true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->put()->execute(
+        $result = $store->allTagOps()->put()->execute(
             'mykey',
             'myvalue',
             60,
@@ -156,7 +156,7 @@ class PutTest extends TestCase
 
         $client->shouldReceive('zadd')
             ->once()
-            ->with('custom:tag:users:entries', now()->timestamp + 30, 'mykey')
+            ->with('custom:_all:tag:users:entries', now()->timestamp + 30, 'mykey')
             ->andReturn($client);
 
         $client->shouldReceive('setex')
@@ -168,12 +168,12 @@ class PutTest extends TestCase
             ->once()
             ->andReturn([1, true]);
 
-        $store = $this->createStore($connection, 'custom');
-        $result = $store->intersectionTagOps()->put()->execute(
+        $store = $this->createStore($connection, 'custom:');
+        $result = $store->allTagOps()->put()->execute(
             'mykey',
             'myvalue',
             30,
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
         $this->assertTrue($result);
@@ -198,11 +198,11 @@ class PutTest extends TestCase
             ->andReturn([1, false]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->put()->execute(
+        $result = $store->allTagOps()->put()->execute(
             'mykey',
             'myvalue',
             60,
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
         $this->assertFalse($result);
@@ -240,7 +240,7 @@ class PutTest extends TestCase
         // Sequential ZADD
         $clusterClient->shouldReceive('zadd')
             ->once()
-            ->with('prefix:tag:users:entries', now()->timestamp + 60, 'mykey')
+            ->with('prefix:_all:tag:users:entries', now()->timestamp + 60, 'mykey')
             ->andReturn(1);
 
         // Sequential SETEX
@@ -251,16 +251,16 @@ class PutTest extends TestCase
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
 
-        $result = $store->intersectionTagOps()->put()->execute(
+        $result = $store->allTagOps()->put()->execute(
             'mykey',
             'myvalue',
             60,
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
         $this->assertTrue($result);
@@ -289,11 +289,11 @@ class PutTest extends TestCase
             ->andReturn([1, true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->put()->execute(
+        $result = $store->allTagOps()->put()->execute(
             'mykey',
             'myvalue',
             0,  // Zero TTL
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
         $this->assertTrue($result);
@@ -324,11 +324,11 @@ class PutTest extends TestCase
             ->andReturn([1, true]);
 
         $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->put()->execute(
+        $result = $store->allTagOps()->put()->execute(
             'mykey',
             42,
             60,
-            ['tag:users:entries']
+            ['_all:tag:users:entries']
         );
 
         $this->assertTrue($result);

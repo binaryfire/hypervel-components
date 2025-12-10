@@ -93,7 +93,7 @@ class PutManyTest extends TestCase
 
         $redis = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
@@ -130,7 +130,7 @@ class PutManyTest extends TestCase
 
         $redis = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );

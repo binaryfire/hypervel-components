@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\UnionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AnyTag;
 
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
@@ -46,7 +46,8 @@ class PutManyTest extends TestCase
         $client->shouldReceive('zadd')->andReturn($client);
 
         $redis = $this->createStore($connection);
-        $result = $redis->unionTagOps()->putMany()->execute([
+        $redis->setTagMode('any');
+        $result = $redis->anyTagOps()->putMany()->execute([
             'foo' => 'bar',
             'baz' => 'qux',
         ], 60, ['users']);

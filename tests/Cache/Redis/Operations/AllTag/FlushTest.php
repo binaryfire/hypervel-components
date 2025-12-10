@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AllTag;
 
 use Hyperf\Collection\LazyCollection;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\Flush;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\GetEntries;
+use Hypervel\Cache\Redis\Operations\AllTag\Flush;
+use Hypervel\Cache\Redis\Operations\AllTag\GetEntries;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
@@ -32,7 +32,7 @@ class FlushTest extends TestCase
         $getEntries = m::mock(GetEntries::class);
         $getEntries->shouldReceive('execute')
             ->once()
-            ->with(['tag:users:entries'])
+            ->with(['_all:tag:users:entries'])
             ->andReturn(new LazyCollection(['key1', 'key2']));
 
         // Should delete the cache entries (with prefix)
@@ -44,13 +44,13 @@ class FlushTest extends TestCase
         // Should delete the tag sorted set
         $connection->shouldReceive('del')
             ->once()
-            ->with('prefix:tag:users:entries')
+            ->with('prefix:_all:tag:users:entries')
             ->andReturn(1);
 
         $store = $this->createStore($connection);
         $operation = new Flush($store->getContext(), $getEntries);
 
-        $operation->execute(['tag:users:entries'], ['users']);
+        $operation->execute(['_all:tag:users:entries'], ['users']);
     }
 
     /**
@@ -64,7 +64,7 @@ class FlushTest extends TestCase
         $getEntries = m::mock(GetEntries::class);
         $getEntries->shouldReceive('execute')
             ->once()
-            ->with(['tag:users:entries', 'tag:posts:entries'])
+            ->with(['_all:tag:users:entries', '_all:tag:posts:entries'])
             ->andReturn(new LazyCollection(['user_key1', 'user_key2', 'post_key1']));
 
         // Should delete all cache entries (with prefix)
@@ -76,13 +76,13 @@ class FlushTest extends TestCase
         // Should delete both tag sorted sets in a single batched call
         $connection->shouldReceive('del')
             ->once()
-            ->with('prefix:tag:users:entries', 'prefix:tag:posts:entries')
+            ->with('prefix:_all:tag:users:entries', 'prefix:_all:tag:posts:entries')
             ->andReturn(2);
 
         $store = $this->createStore($connection);
         $operation = new Flush($store->getContext(), $getEntries);
 
-        $operation->execute(['tag:users:entries', 'tag:posts:entries'], ['users', 'posts']);
+        $operation->execute(['_all:tag:users:entries', '_all:tag:posts:entries'], ['users', 'posts']);
     }
 
     /**
@@ -96,7 +96,7 @@ class FlushTest extends TestCase
         $getEntries = m::mock(GetEntries::class);
         $getEntries->shouldReceive('execute')
             ->once()
-            ->with(['tag:users:entries'])
+            ->with(['_all:tag:users:entries'])
             ->andReturn(new LazyCollection([]));
 
         // No cache entries to delete
@@ -105,13 +105,13 @@ class FlushTest extends TestCase
         // Should still delete the tag sorted set
         $connection->shouldReceive('del')
             ->once()
-            ->with('prefix:tag:users:entries')
+            ->with('prefix:_all:tag:users:entries')
             ->andReturn(1);
 
         $store = $this->createStore($connection);
         $operation = new Flush($store->getContext(), $getEntries);
 
-        $operation->execute(['tag:users:entries'], ['users']);
+        $operation->execute(['_all:tag:users:entries'], ['users']);
     }
 
     /**
@@ -131,7 +131,7 @@ class FlushTest extends TestCase
         $getEntries = m::mock(GetEntries::class);
         $getEntries->shouldReceive('execute')
             ->once()
-            ->with(['tag:users:entries'])
+            ->with(['_all:tag:users:entries'])
             ->andReturn(new LazyCollection($entries));
 
         // First chunk: 1000 entries
@@ -157,13 +157,13 @@ class FlushTest extends TestCase
         // Should delete the tag sorted set
         $connection->shouldReceive('del')
             ->once()
-            ->with('prefix:tag:users:entries')
+            ->with('prefix:_all:tag:users:entries')
             ->andReturn(1);
 
         $store = $this->createStore($connection);
         $operation = new Flush($store->getContext(), $getEntries);
 
-        $operation->execute(['tag:users:entries'], ['users']);
+        $operation->execute(['_all:tag:users:entries'], ['users']);
     }
 
     /**
@@ -177,7 +177,7 @@ class FlushTest extends TestCase
         $getEntries = m::mock(GetEntries::class);
         $getEntries->shouldReceive('execute')
             ->once()
-            ->with(['tag:users:entries'])
+            ->with(['_all:tag:users:entries'])
             ->andReturn(new LazyCollection(['mykey']));
 
         // Should use custom prefix for cache entries
@@ -189,13 +189,13 @@ class FlushTest extends TestCase
         // Should use custom prefix for tag sorted set
         $connection->shouldReceive('del')
             ->once()
-            ->with('custom_prefix:tag:users:entries')
+            ->with('custom_prefix:_all:tag:users:entries')
             ->andReturn(1);
 
-        $store = $this->createStore($connection, 'custom_prefix');
+        $store = $this->createStore($connection, 'custom_prefix:');
         $operation = new Flush($store->getContext(), $getEntries);
 
-        $operation->execute(['tag:users:entries'], ['users']);
+        $operation->execute(['_all:tag:users:entries'], ['users']);
     }
 
     /**
@@ -237,12 +237,12 @@ class FlushTest extends TestCase
         // Verify the tag key format: "tag:{name}:entries"
         $connection->shouldReceive('del')
             ->once()
-            ->with('prefix:tag:my-special-tag:entries')
+            ->with('prefix:_all:tag:my-special-tag:entries')
             ->andReturn(1);
 
         $store = $this->createStore($connection);
         $operation = new Flush($store->getContext(), $getEntries);
 
-        $operation->execute(['tag:my-special-tag:entries'], ['my-special-tag']);
+        $operation->execute(['_all:tag:my-special-tag:entries'], ['my-special-tag']);
     }
 }

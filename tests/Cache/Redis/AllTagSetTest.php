@@ -4,22 +4,22 @@ declare(strict_types=1);
 
 namespace Hypervel\Tests\Cache\Redis;
 
-use Hypervel\Cache\Redis\IntersectionTagSet;
+use Hypervel\Cache\Redis\AllTagSet;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 
 /**
- * Tests for IntersectionTagSet class.
+ * Tests for AllTagSet class.
  *
  * Note: Operation-specific tests (addEntry, entries, flushStaleEntries) have been
- * moved to dedicated test classes in tests/Cache/Redis/Operations/IntersectionTags/.
+ * moved to dedicated test classes in tests/Cache/Redis/Operations/AllTag/.
  *
  * This file tests the TagSet-specific API methods: tagId, tagKey, flushTag, resetTag.
  *
  * @internal
  * @coversNothing
  */
-class IntersectionTagSetTest extends TestCase
+class AllTagSetTest extends TestCase
 {
     use MocksRedisConnections;
 
@@ -30,18 +30,18 @@ class IntersectionTagSetTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $tagSet = new IntersectionTagSet($store, ['users']);
+        $tagSet = new AllTagSet($store, ['users']);
 
         // resetTag calls store->forget which uses del
         $connection->shouldReceive('del')
             ->once()
-            ->with('prefix:tag:users:entries')
+            ->with('prefix:_all:tag:users:entries')
             ->andReturn(1);
 
         $result = $tagSet->flushTag('users');
 
         // Returns the tag identifier
-        $this->assertSame('tag:users:entries', $result);
+        $this->assertSame('_all:tag:users:entries', $result);
     }
 
     /**
@@ -51,16 +51,16 @@ class IntersectionTagSetTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $tagSet = new IntersectionTagSet($store, ['users']);
+        $tagSet = new AllTagSet($store, ['users']);
 
         $connection->shouldReceive('del')
             ->once()
-            ->with('prefix:tag:users:entries')
+            ->with('prefix:_all:tag:users:entries')
             ->andReturn(1);
 
         $result = $tagSet->resetTag('users');
 
-        $this->assertSame('tag:users:entries', $result);
+        $this->assertSame('_all:tag:users:entries', $result);
     }
 
     /**
@@ -70,10 +70,10 @@ class IntersectionTagSetTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $tagSet = new IntersectionTagSet($store, ['users']);
+        $tagSet = new AllTagSet($store, ['users']);
 
-        $this->assertSame('tag:users:entries', $tagSet->tagId('users'));
-        $this->assertSame('tag:posts:entries', $tagSet->tagId('posts'));
+        $this->assertSame('_all:tag:users:entries', $tagSet->tagId('users'));
+        $this->assertSame('_all:tag:posts:entries', $tagSet->tagId('posts'));
     }
 
     /**
@@ -83,10 +83,10 @@ class IntersectionTagSetTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $tagSet = new IntersectionTagSet($store, ['users']);
+        $tagSet = new AllTagSet($store, ['users']);
 
-        // In IntersectionTagSet, tagKey and tagId return the same value
-        $this->assertSame('tag:users:entries', $tagSet->tagKey('users'));
+        // In AllTagSet, tagKey and tagId return the same value
+        $this->assertSame('_all:tag:users:entries', $tagSet->tagKey('users'));
     }
 
     /**
@@ -96,14 +96,14 @@ class IntersectionTagSetTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $tagSet = new IntersectionTagSet($store, ['users', 'posts', 'comments']);
+        $tagSet = new AllTagSet($store, ['users', 'posts', 'comments']);
 
         $tagIds = $tagSet->tagIds();
 
         $this->assertSame([
-            'tag:users:entries',
-            'tag:posts:entries',
-            'tag:comments:entries',
+            '_all:tag:users:entries',
+            '_all:tag:posts:entries',
+            '_all:tag:comments:entries',
         ], $tagIds);
     }
 
@@ -114,7 +114,7 @@ class IntersectionTagSetTest extends TestCase
     {
         $connection = $this->mockConnection();
         $store = $this->createStore($connection);
-        $tagSet = new IntersectionTagSet($store, ['users', 'posts']);
+        $tagSet = new AllTagSet($store, ['users', 'posts']);
 
         $this->assertSame(['users', 'posts'], $tagSet->getNames());
     }

@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Tests\Cache\Redis\Operations\UnionTags;
+namespace Hypervel\Tests\Cache\Redis\Operations\AnyTag;
 
 use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\Pool\RedisPool;
 use Hyperf\Redis\RedisFactory;
-use Hypervel\Cache\Redis\Operations\UnionTags\Flush;
-use Hypervel\Cache\Redis\Operations\UnionTags\GetTaggedKeys;
+use Hypervel\Cache\Redis\Operations\AnyTag\Flush;
+use Hypervel\Cache\Redis\Operations\AnyTag\GetTaggedKeys;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Redis\RedisConnection;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
@@ -48,7 +48,7 @@ class FlushTest extends TestCase
         // Should delete reverse indexes via pipeline
         $client->shouldReceive('del')
             ->once()
-            ->with('prefix:key1:_erc:tags', 'prefix:key2:_erc:tags')
+            ->with('prefix:key1:_any:tags', 'prefix:key2:_any:tags')
             ->andReturn($client);
 
         // Should unlink cache entries via pipeline
@@ -63,14 +63,15 @@ class FlushTest extends TestCase
         // Should delete the tag hash and remove from registry via pipeline
         $client->shouldReceive('del')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn($client);
         $client->shouldReceive('zrem')
             ->once()
-            ->with('prefix:_erc:tag:registry', 'users')
+            ->with('prefix:_any:tag:registry', 'users')
             ->andReturn($client);
 
         $store = $this->createStore($connection);
+        $store->setTagMode('any');
         $operation = new Flush($store->getContext(), $getTaggedKeys);
 
         $result = $operation->execute(['users']);
@@ -104,6 +105,7 @@ class FlushTest extends TestCase
         $client->shouldReceive('exec')->andReturn([]);
 
         $store = $this->createStore($connection);
+        $store->setTagMode('any');
         $operation = new Flush($store->getContext(), $getTaggedKeys);
 
         $result = $operation->execute(['users', 'posts']);
@@ -129,15 +131,16 @@ class FlushTest extends TestCase
         $client->shouldReceive('pipeline')->andReturn($client);
         $client->shouldReceive('del')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn($client);
         $client->shouldReceive('zrem')
             ->once()
-            ->with('prefix:_erc:tag:registry', 'users')
+            ->with('prefix:_any:tag:registry', 'users')
             ->andReturn($client);
         $client->shouldReceive('exec')->once()->andReturn([1, 1]);
 
         $store = $this->createStore($connection);
+        $store->setTagMode('any');
         $operation = new Flush($store->getContext(), $getTaggedKeys);
 
         $result = $operation->execute(['users']);
@@ -171,6 +174,7 @@ class FlushTest extends TestCase
         $client->shouldReceive('exec')->andReturn([]);
 
         $store = $this->createStore($connection);
+        $store->setTagMode('any');
         $operation = new Flush($store->getContext(), $getTaggedKeys);
 
         $result = $operation->execute(['users', 'posts']);
@@ -196,7 +200,7 @@ class FlushTest extends TestCase
         // Should use custom prefix for reverse index
         $client->shouldReceive('del')
             ->once()
-            ->with('custom_prefix:mykey:_erc:tags')
+            ->with('custom_prefix:mykey:_any:tags')
             ->andReturn($client);
 
         // Should use custom prefix for cache key
@@ -210,16 +214,17 @@ class FlushTest extends TestCase
         // Should use custom prefix for tag hash
         $client->shouldReceive('del')
             ->once()
-            ->with('custom_prefix:_erc:tag:users:entries')
+            ->with('custom_prefix:_any:tag:users:entries')
             ->andReturn($client);
 
         // Should use custom prefix for registry
         $client->shouldReceive('zrem')
             ->once()
-            ->with('custom_prefix:_erc:tag:registry', 'users')
+            ->with('custom_prefix:_any:tag:registry', 'users')
             ->andReturn($client);
 
-        $store = $this->createStore($connection, 'custom_prefix');
+        $store = $this->createStore($connection, 'custom_prefix:');
+        $store->setTagMode('any');
         $operation = new Flush($store->getContext(), $getTaggedKeys);
 
         $result = $operation->execute(['users']);
@@ -262,7 +267,7 @@ class FlushTest extends TestCase
         // Sequential del for reverse indexes
         $clusterClient->shouldReceive('del')
             ->once()
-            ->with('prefix:key1:_erc:tags', 'prefix:key2:_erc:tags')
+            ->with('prefix:key1:_any:tags', 'prefix:key2:_any:tags')
             ->andReturn(2);
 
         // Sequential unlink for cache keys
@@ -274,21 +279,22 @@ class FlushTest extends TestCase
         // Sequential del for tag hash
         $clusterClient->shouldReceive('del')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(1);
 
         // Sequential zrem for registry
         $clusterClient->shouldReceive('zrem')
             ->once()
-            ->with('prefix:_erc:tag:registry', 'users')
+            ->with('prefix:_any:tag:registry', 'users')
             ->andReturn(1);
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
+        $store->setTagMode('any');
 
         $operation = new Flush($store->getContext(), $getTaggedKeys);
         $result = $operation->execute(['users']);
@@ -336,10 +342,11 @@ class FlushTest extends TestCase
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
-            'prefix',
+            'prefix:',
             'default',
             $poolFactory
         );
+        $store->setTagMode('any');
 
         $operation = new Flush($store->getContext(), $getTaggedKeys);
         $result = $operation->execute(['users', 'posts']);
@@ -356,10 +363,10 @@ class FlushTest extends TestCase
 
         // Mock hlen/hkeys for GetTaggedKeys internal calls
         $client->shouldReceive('hlen')
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(1);
         $client->shouldReceive('hkeys')
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(['mykey']);
 
         // Pipeline mode
@@ -370,7 +377,8 @@ class FlushTest extends TestCase
         $client->shouldReceive('exec')->andReturn([]);
 
         $store = $this->createStore($connection);
-        $result = $store->unionTagOps()->flush()->execute(['users']);
+        $store->setTagMode('any');
+        $result = $store->anyTagOps()->flush()->execute(['users']);
         $this->assertTrue($result);
     }
 

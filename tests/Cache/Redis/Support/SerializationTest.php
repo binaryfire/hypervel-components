@@ -8,6 +8,7 @@ use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\Pool\RedisPool;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
+use Hypervel\Cache\Redis\TagMode;
 use Hypervel\Redis\RedisConnection;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
@@ -115,7 +116,7 @@ class SerializationTest extends TestCase
             ->with(['test-value'])
             ->andReturn(['packed-value']);
 
-        $context = new StoreContext($poolFactory, 'default', 'prefix:');
+        $context = new StoreContext($poolFactory, 'default', 'prefix:', TagMode::Any);
         $serialization = new Serialization($context);
 
         $this->assertSame('packed-value', $serialization->serializeForLua('test-value'));
@@ -140,7 +141,7 @@ class SerializationTest extends TestCase
             ->with(serialize('test-value'))
             ->andReturn('compressed-value');
 
-        $context = new StoreContext($poolFactory, 'default', 'prefix:');
+        $context = new StoreContext($poolFactory, 'default', 'prefix:', TagMode::Any);
         $serialization = new Serialization($context);
 
         $this->assertSame('compressed-value', $serialization->serializeForLua('test-value'));
@@ -162,7 +163,7 @@ class SerializationTest extends TestCase
             ->with(Redis::OPT_COMPRESSION)
             ->andReturn(Redis::COMPRESSION_NONE);
 
-        $context = new StoreContext($poolFactory, 'default', 'prefix:');
+        $context = new StoreContext($poolFactory, 'default', 'prefix:', TagMode::Any);
         $serialization = new Serialization($context);
 
         $this->assertSame(serialize('test-value'), $serialization->serializeForLua('test-value'));
@@ -184,7 +185,7 @@ class SerializationTest extends TestCase
             ->with(Redis::OPT_COMPRESSION)
             ->andReturn(Redis::COMPRESSION_NONE);
 
-        $context = new StoreContext($poolFactory, 'default', 'prefix:');
+        $context = new StoreContext($poolFactory, 'default', 'prefix:', TagMode::Any);
         $serialization = new Serialization($context);
 
         // Numeric values should be cast to string for Lua ARGV
@@ -212,7 +213,7 @@ class SerializationTest extends TestCase
             ->with('123')
             ->andReturn('compressed-123');
 
-        $context = new StoreContext($poolFactory, 'default', 'prefix:');
+        $context = new StoreContext($poolFactory, 'default', 'prefix:', TagMode::Any);
         $serialization = new Serialization($context);
 
         $this->assertSame('compressed-123', $serialization->serializeForLua(123));
@@ -229,7 +230,7 @@ class SerializationTest extends TestCase
         $connection->shouldReceive('release');
         $connection->shouldReceive('serialized')->andReturn($serialized);
 
-        $context = new StoreContext($poolFactory, 'default', 'prefix:');
+        $context = new StoreContext($poolFactory, 'default', 'prefix:', TagMode::Any);
 
         return new Serialization($context);
     }

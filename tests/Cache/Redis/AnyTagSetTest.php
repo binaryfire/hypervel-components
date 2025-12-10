@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Hypervel\Tests\Cache\Redis;
 
 use Generator;
-use Hypervel\Cache\Redis\UnionTagSet;
+use Hypervel\Cache\Redis\AnyTagSet;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
@@ -13,7 +13,7 @@ use Mockery as m;
 use Redis;
 
 /**
- * Tests for UnionTagSet class.
+ * Tests for AnyTagSet class.
  *
  * Uses MocksRedisConnections to mock at the Redis client level,
  * allowing the full operation chain to execute.
@@ -21,7 +21,7 @@ use Redis;
  * @internal
  * @coversNothing
  */
-class UnionTagSetTest extends TestCase
+class AnyTagSetTest extends TestCase
 {
     use MocksRedisConnections;
 
@@ -46,7 +46,7 @@ class UnionTagSetTest extends TestCase
      */
     public function testGetNamesReturnsTagNames(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users', 'posts']);
+        $tagSet = new AnyTagSet($this->store, ['users', 'posts']);
 
         $this->assertSame(['users', 'posts'], $tagSet->getNames());
     }
@@ -56,7 +56,7 @@ class UnionTagSetTest extends TestCase
      */
     public function testGetNamesReturnsEmptyArrayWhenNoTags(): void
     {
-        $tagSet = new UnionTagSet($this->store, []);
+        $tagSet = new AnyTagSet($this->store, []);
 
         $this->assertSame([], $tagSet->getNames());
     }
@@ -66,9 +66,9 @@ class UnionTagSetTest extends TestCase
      */
     public function testTagIdReturnsTagNameDirectly(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users']);
+        $tagSet = new AnyTagSet($this->store, ['users']);
 
-        // Unlike IntersectionTagSet, union mode uses tag name directly (no UUID)
+        // Unlike AllTagSet, any mode uses tag name directly (no UUID)
         $this->assertSame('users', $tagSet->tagId('users'));
         $this->assertSame('posts', $tagSet->tagId('posts'));
     }
@@ -78,7 +78,7 @@ class UnionTagSetTest extends TestCase
      */
     public function testTagIdsReturnsAllTagNames(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users', 'posts', 'comments']);
+        $tagSet = new AnyTagSet($this->store, ['users', 'posts', 'comments']);
 
         $this->assertSame(['users', 'posts', 'comments'], $tagSet->tagIds());
     }
@@ -88,11 +88,11 @@ class UnionTagSetTest extends TestCase
      */
     public function testTagHashKeyReturnsCorrectFormat(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users']);
+        $tagSet = new AnyTagSet($this->store, ['users']);
 
         $result = $tagSet->tagHashKey('users');
 
-        $this->assertSame('prefix:_erc:tag:users:entries', $result);
+        $this->assertSame('prefix:_any:tag:users:entries', $result);
     }
 
     /**
@@ -100,17 +100,17 @@ class UnionTagSetTest extends TestCase
      */
     public function testEntriesReturnsGeneratorOfKeys(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users']);
+        $tagSet = new AnyTagSet($this->store, ['users']);
 
         // GetTaggedKeys checks HLEN then uses HKEYS for small hashes
         $this->client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(3);
 
         $this->client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(['key1', 'key2', 'key3']);
 
         $entries = $tagSet->entries();
@@ -124,26 +124,26 @@ class UnionTagSetTest extends TestCase
      */
     public function testEntriesDeduplicatesAcrossTags(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users', 'posts']);
+        $tagSet = new AnyTagSet($this->store, ['users', 'posts']);
 
         // First tag 'users' has keys key1, key2
         $this->client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(2);
         $this->client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(['key1', 'key2']);
 
         // Second tag 'posts' has keys key2, key3 (key2 is duplicate)
         $this->client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:posts:entries')
+            ->with('prefix:_any:tag:posts:entries')
             ->andReturn(2);
         $this->client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:posts:entries')
+            ->with('prefix:_any:tag:posts:entries')
             ->andReturn(['key2', 'key3']);
 
         $entries = $tagSet->entries();
@@ -159,15 +159,15 @@ class UnionTagSetTest extends TestCase
      */
     public function testEntriesWithEmptyTagReturnsEmpty(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users']);
+        $tagSet = new AnyTagSet($this->store, ['users']);
 
         $this->client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(0);
         $this->client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn([]);
 
         $entries = $tagSet->entries();
@@ -180,7 +180,7 @@ class UnionTagSetTest extends TestCase
      */
     public function testEntriesWithNoTagsReturnsEmpty(): void
     {
-        $tagSet = new UnionTagSet($this->store, []);
+        $tagSet = new AnyTagSet($this->store, []);
 
         $entries = $tagSet->entries();
 
@@ -192,16 +192,16 @@ class UnionTagSetTest extends TestCase
      */
     public function testFlushDeletesKeysAndTagHashes(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users']);
+        $tagSet = new AnyTagSet($this->store, ['users']);
 
         // GetTaggedKeys for the flush operation
         $this->client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(2);
         $this->client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(['key1', 'key2']);
 
         // Pipeline for deleting cache keys, reverse indexes, tag hashes, registry entries
@@ -222,16 +222,16 @@ class UnionTagSetTest extends TestCase
      */
     public function testFlushTagDeletesSingleTag(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users', 'posts']);
+        $tagSet = new AnyTagSet($this->store, ['users', 'posts']);
 
         // GetTaggedKeys for the flush operation (only 'users' tag)
         $this->client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(1);
         $this->client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(['key1']);
 
         // Pipeline for flush operations
@@ -243,7 +243,7 @@ class UnionTagSetTest extends TestCase
 
         $result = $tagSet->flushTag('users');
 
-        $this->assertSame('prefix:_erc:tag:users:entries', $result);
+        $this->assertSame('prefix:_any:tag:users:entries', $result);
     }
 
     /**
@@ -251,7 +251,7 @@ class UnionTagSetTest extends TestCase
      */
     public function testGetNamespaceReturnsEmptyString(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users']);
+        $tagSet = new AnyTagSet($this->store, ['users']);
 
         // Union mode doesn't namespace keys by tags
         $this->assertSame('', $tagSet->getNamespace());
@@ -262,16 +262,16 @@ class UnionTagSetTest extends TestCase
      */
     public function testResetTagFlushesTagAndReturnsName(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users']);
+        $tagSet = new AnyTagSet($this->store, ['users']);
 
         // GetTaggedKeys for the flush operation
         $this->client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(1);
         $this->client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(['key1']);
 
         // Pipeline for flush operations
@@ -283,7 +283,7 @@ class UnionTagSetTest extends TestCase
 
         $result = $tagSet->resetTag('users');
 
-        // Returns the tag name (not a UUID like IntersectionTagSet)
+        // Returns the tag name (not a UUID like AllTagSet)
         $this->assertSame('users', $result);
     }
 
@@ -292,11 +292,11 @@ class UnionTagSetTest extends TestCase
      */
     public function testTagKeyReturnsSameAsTagHashKey(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users']);
+        $tagSet = new AnyTagSet($this->store, ['users']);
 
         $result = $tagSet->tagKey('users');
 
-        $this->assertSame('prefix:_erc:tag:users:entries', $result);
+        $this->assertSame('prefix:_any:tag:users:entries', $result);
     }
 
     /**
@@ -304,25 +304,25 @@ class UnionTagSetTest extends TestCase
      */
     public function testResetCallsFlush(): void
     {
-        $tagSet = new UnionTagSet($this->store, ['users', 'posts']);
+        $tagSet = new AnyTagSet($this->store, ['users', 'posts']);
 
         // GetTaggedKeys for both tags
         $this->client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(1);
         $this->client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:users:entries')
+            ->with('prefix:_any:tag:users:entries')
             ->andReturn(['key1']);
 
         $this->client->shouldReceive('hlen')
             ->once()
-            ->with('prefix:_erc:tag:posts:entries')
+            ->with('prefix:_any:tag:posts:entries')
             ->andReturn(1);
         $this->client->shouldReceive('hkeys')
             ->once()
-            ->with('prefix:_erc:tag:posts:entries')
+            ->with('prefix:_any:tag:posts:entries')
             ->andReturn(['key2']);
 
         // Pipeline for flush operations
@@ -353,5 +353,6 @@ class UnionTagSetTest extends TestCase
         $this->client->shouldReceive('pipeline')->andReturn($this->pipeline)->byDefault();
 
         $this->store = $this->createStore($connection);
+        $this->store->setTagMode('any');
     }
 }
