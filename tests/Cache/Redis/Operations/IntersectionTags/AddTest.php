@@ -19,6 +19,9 @@ use RedisCluster;
 /**
  * Tests for the Add operation (intersection tags).
  *
+ * Uses native Redis SET with NX (only set if Not eXists) and EX (expiration)
+ * flags for atomic "add if not exists" semantics.
+ *
  * @internal
  * @coversNothing
  */
@@ -52,22 +55,11 @@ class AddTest extends TestCase
             ->once()
             ->andReturn([1]);
 
-        // Lua script for atomic add
-        $client->shouldReceive('evalSha')
+        // SET NX EX for atomic add
+        $client->shouldReceive('set')
             ->once()
-            ->andReturn(false);
-
-        $client->shouldReceive('eval')
-            ->once()
-            ->withArgs(function ($script, $args, $numKeys) {
-                $this->assertStringContainsString('exists', $script);
-                $this->assertStringContainsString('setex', $script);
-                $this->assertSame(1, $numKeys);
-                $this->assertSame('prefix:mykey', $args[0]);
-
-                return true;
-            })
-            ->andReturn('OK');
+            ->with('prefix:mykey', serialize('myvalue'), ['EX' => 60, 'NX'])
+            ->andReturn(true);
 
         $store = $this->createStore($connection);
         $result = $store->intersectionTagOps()->add()->execute(
@@ -99,13 +91,11 @@ class AddTest extends TestCase
         $pipeline->shouldReceive('zadd')->andReturnSelf();
         $pipeline->shouldReceive('exec')->andReturn([1]);
 
-        // Lua script returns false when key exists
-        $client->shouldReceive('evalSha')
+        // SET NX returns null/false when key already exists
+        $client->shouldReceive('set')
             ->once()
-            ->andReturn(false);
-        $client->shouldReceive('eval')
-            ->once()
-            ->andReturn(false);
+            ->with('prefix:mykey', serialize('myvalue'), ['EX' => 60, 'NX'])
+            ->andReturn(null);
 
         $store = $this->createStore($connection);
         $result = $store->intersectionTagOps()->add()->execute(
@@ -150,9 +140,11 @@ class AddTest extends TestCase
             ->once()
             ->andReturn([1, 1]);
 
-        $client->shouldReceive('evalSha')
+        // SET NX EX for atomic add
+        $client->shouldReceive('set')
             ->once()
-            ->andReturn('OK');
+            ->with('prefix:mykey', serialize('myvalue'), ['EX' => 120, 'NX'])
+            ->andReturn(true);
 
         $store = $this->createStore($connection);
         $result = $store->intersectionTagOps()->add()->execute(
@@ -176,10 +168,11 @@ class AddTest extends TestCase
         // No pipeline operations for empty tags
         $connection->shouldNotReceive('multi');
 
-        // Only Lua script for add
-        $client->shouldReceive('evalSha')
+        // Only SET NX EX for add
+        $client->shouldReceive('set')
             ->once()
-            ->andReturn('OK');
+            ->with('prefix:mykey', serialize('myvalue'), ['EX' => 60, 'NX'])
+            ->andReturn(true);
 
         $store = $this->createStore($connection);
         $result = $store->intersectionTagOps()->add()->execute(
@@ -227,10 +220,11 @@ class AddTest extends TestCase
             ->with('prefix:tag:users:entries', now()->timestamp + 60, 'mykey')
             ->andReturn(1);
 
-        // Lua script
-        $clusterClient->shouldReceive('evalSha')
+        // SET NX EX for atomic add
+        $clusterClient->shouldReceive('set')
             ->once()
-            ->andReturn('OK');
+            ->with('prefix:mykey', serialize('myvalue'), ['EX' => 60, 'NX'])
+            ->andReturn(true);
 
         $store = new RedisStore(
             m::mock(RedisFactory::class),
@@ -252,7 +246,90 @@ class AddTest extends TestCase
     /**
      * @test
      */
-    public function testAddUsesEvalWhenEvalShaFails(): void
+    public function testAddInClusterModeReturnsFalseWhenKeyExists(): void
+    {
+        Carbon::setTestNow('2000-01-01 00:00:00');
+
+        $clusterClient = m::mock(RedisCluster::class);
+        $clusterClient->shouldReceive('getOption')
+            ->with(Redis::OPT_COMPRESSION)
+            ->andReturn(Redis::COMPRESSION_NONE);
+        $clusterClient->shouldReceive('getOption')
+            ->with(Redis::OPT_PREFIX)
+            ->andReturn('');
+
+        $connection = m::mock(RedisConnection::class);
+        $connection->shouldReceive('release')->zeroOrMoreTimes();
+        $connection->shouldReceive('serialized')->andReturn(false);
+        $connection->shouldReceive('client')->andReturn($clusterClient);
+
+        $pool = m::mock(RedisPool::class);
+        $pool->shouldReceive('get')->andReturn($connection);
+
+        $poolFactory = m::mock(PoolFactory::class);
+        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+
+        // Sequential ZADD (still happens even if key exists)
+        $clusterClient->shouldReceive('zadd')
+            ->once()
+            ->with('prefix:tag:users:entries', now()->timestamp + 60, 'mykey')
+            ->andReturn(1);
+
+        // SET NX returns false when key exists (RedisCluster return type is string|bool)
+        $clusterClient->shouldReceive('set')
+            ->once()
+            ->with('prefix:mykey', serialize('myvalue'), ['EX' => 60, 'NX'])
+            ->andReturn(false);
+
+        $store = new RedisStore(
+            m::mock(RedisFactory::class),
+            'prefix',
+            'default',
+            $poolFactory
+        );
+
+        $result = $store->intersectionTagOps()->add()->execute(
+            'mykey',
+            'myvalue',
+            60,
+            ['tag:users:entries']
+        );
+
+        $this->assertFalse($result);
+    }
+
+    /**
+     * @test
+     */
+    public function testAddEnforcesMinimumTtlOfOne(): void
+    {
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
+        // No pipeline for empty tags
+        $connection->shouldNotReceive('multi');
+
+        // TTL should be at least 1
+        $client->shouldReceive('set')
+            ->once()
+            ->with('prefix:mykey', serialize('myvalue'), ['EX' => 1, 'NX'])
+            ->andReturn(true);
+
+        $store = $this->createStore($connection);
+        $result = $store->intersectionTagOps()->add()->execute(
+            'mykey',
+            'myvalue',
+            0,  // Zero TTL
+            []
+        );
+
+        $this->assertTrue($result);
+    }
+
+    /**
+     * @test
+     */
+    public function testAddWithNumericValue(): void
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
@@ -268,54 +345,18 @@ class AddTest extends TestCase
         $pipeline->shouldReceive('zadd')->andReturnSelf();
         $pipeline->shouldReceive('exec')->andReturn([1]);
 
-        // evalSha fails (script not cached)
-        $client->shouldReceive('evalSha')
+        // Numeric values are NOT serialized (optimization)
+        $client->shouldReceive('set')
             ->once()
-            ->andReturn(false);
-
-        // Falls back to eval
-        $client->shouldReceive('eval')
-            ->once()
-            ->andReturn('OK');
+            ->with('prefix:mykey', 42, ['EX' => 60, 'NX'])
+            ->andReturn(true);
 
         $store = $this->createStore($connection);
         $result = $store->intersectionTagOps()->add()->execute(
             'mykey',
-            'myvalue',
+            42,
             60,
             ['tag:users:entries']
-        );
-
-        $this->assertTrue($result);
-    }
-
-    /**
-     * @test
-     */
-    public function testAddEnforcesMinimumTtlOfOne(): void
-    {
-        $connection = $this->mockConnection();
-        $client = $connection->_mockClient;
-
-        // No pipeline for empty tags
-        $connection->shouldNotReceive('multi');
-
-        // TTL should be at least 1
-        $client->shouldReceive('evalSha')
-            ->once()
-            ->withArgs(function ($hash, $args, $numKeys) {
-                $this->assertSame(1, $args[2]); // TTL argument
-
-                return true;
-            })
-            ->andReturn('OK');
-
-        $store = $this->createStore($connection);
-        $result = $store->intersectionTagOps()->add()->execute(
-            'mykey',
-            'myvalue',
-            0,  // Zero TTL
-            []
         );
 
         $this->assertTrue($result);

@@ -15,16 +15,14 @@ use Redis;
  * Combines the ZADD operations for tag tracking with the atomic add
  * in a single connection checkout for efficiency.
  *
+ * Uses Redis SET with NX (only set if Not eXists) and EX (expiration) flags
+ * for atomic "add if not exists" semantics without requiring Lua scripts.
+ *
  * Note: Tag entries are always added, even if the key exists. This matches
  * the original behavior where addEntry() is called before checking existence.
  */
 class Add
 {
-    /**
-     * Lua script for atomic add (only set if key doesn't exist).
-     */
-    private const ADD_LUA_SCRIPT = "return redis.call('exists',KEYS[1])<1 and redis.call('setex',KEYS[1],ARGV[2],ARGV[1])";
-
     public function __construct(
         private readonly StoreContext $context,
         private readonly Serialization $serialization,
@@ -45,22 +43,22 @@ class Add
             return $this->executeCluster($key, $value, $seconds, $tagIds);
         }
 
-        return $this->executeStandard($key, $value, $seconds, $tagIds);
+        return $this->executePipeline($key, $value, $seconds, $tagIds);
     }
 
     /**
-     * Execute for standard Redis.
+     * Execute using pipeline for standard Redis (non-cluster).
      *
-     * Uses pipeline for ZADD operations, then Lua script for atomic add.
+     * Pipelines ZADD commands for all tags, then uses SET NX EX for atomic add.
      */
-    private function executeStandard(string $key, mixed $value, int $seconds, array $tagIds): bool
+    private function executePipeline(string $key, mixed $value, int $seconds, array $tagIds): bool
     {
         return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $seconds, $tagIds) {
             $client = $conn->client();
             $prefix = $this->context->prefix();
             $score = now()->addSeconds($seconds)->getTimestamp();
 
-            // Pipeline the ZADD operations
+            // Pipeline the ZADD operations for tag tracking
             if (! empty($tagIds)) {
                 $pipeline = $conn->multi(Redis::PIPELINE);
 
@@ -71,30 +69,22 @@ class Add
                 $pipeline->exec();
             }
 
-            // Atomic add using Lua script
-            $serialized = $this->serialization->serializeForLua($value);
-            $args = [
+            // SET key value EX seconds NX - atomic "add if not exists"
+            $result = $client->set(
                 $prefix . $key,
-                $serialized,
-                max(1, $seconds),
-            ];
-
-            $scriptHash = sha1(self::ADD_LUA_SCRIPT);
-            $result = $client->evalSha($scriptHash, $args, 1);
-
-            // Fallback to eval if NOSCRIPT error
-            if ($result === false) {
-                $result = $client->eval(self::ADD_LUA_SCRIPT, $args, 1);
-            }
+                $this->serialization->serialize($value),
+                ['EX' => max(1, $seconds), 'NX']
+            );
 
             return (bool) $result;
         });
     }
 
     /**
-     * Execute for Redis Cluster.
+     * Execute using sequential commands for Redis Cluster.
      *
-     * Sequential commands since tags and key may be in different slots.
+     * Sequential ZADD commands since tags may be in different slots,
+     * then SET NX EX for atomic add.
      */
     private function executeCluster(string $key, mixed $value, int $seconds, array $tagIds): bool
     {
@@ -108,21 +98,12 @@ class Add
                 $client->zadd($prefix . $tagId, $score, $key);
             }
 
-            // Atomic add using Lua script
-            $serialized = $this->serialization->serializeForLua($value);
-            $args = [
+            // SET key value EX seconds NX - atomic "add if not exists"
+            $result = $client->set(
                 $prefix . $key,
-                $serialized,
-                max(1, $seconds),
-            ];
-
-            $scriptHash = sha1(self::ADD_LUA_SCRIPT);
-            $result = $client->evalSha($scriptHash, $args, 1);
-
-            // Fallback to eval if NOSCRIPT error
-            if ($result === false) {
-                $result = $client->eval(self::ADD_LUA_SCRIPT, $args, 1);
-            }
+                $this->serialization->serialize($value),
+                ['EX' => max(1, $seconds), 'NX']
+            );
 
             return (bool) $result;
         });

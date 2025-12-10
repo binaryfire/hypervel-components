@@ -6,10 +6,12 @@ namespace Hypervel\Tests\Cache\Redis\Operations;
 
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
-use Mockery as m;
 
 /**
  * Tests for the Add operation.
+ *
+ * Uses native Redis SET with NX (only set if Not eXists) and EX (expiration)
+ * flags for atomic "add if not exists" semantics.
  *
  * @internal
  * @coversNothing
@@ -21,48 +23,16 @@ class AddTest extends TestCase
     /**
      * @test
      */
-    public function testAddUsesEvalShaWithFallbackToEval(): void
+    public function testAddReturnsTrueWhenKeyDoesNotExist(): void
     {
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
 
-        $luaScript = "return redis.call('exists',KEYS[1])<1 and redis.call('setex',KEYS[1],ARGV[2],ARGV[1])";
-
-        // evalSha returns false (NOSCRIPT - script not cached on server)
-        $client->shouldReceive('evalSha')
+        // SET returns true/OK when key was set
+        $client->shouldReceive('set')
             ->once()
-            ->with(sha1($luaScript), m::type('array'), 1)
-            ->andReturn(false);
-
-        // Falls back to eval with full script
-        $client->shouldReceive('eval')
-            ->once()
-            ->with($luaScript, ['prefix:foo', serialize('bar'), 60], 1)
+            ->with('prefix:foo', serialize('bar'), ['EX' => 60, 'NX'])
             ->andReturn(true);
-
-        $redis = $this->createStore($connection);
-        $result = $redis->add('foo', 'bar', 60);
-        $this->assertTrue($result);
-    }
-
-    /**
-     * @test
-     */
-    public function testAddUsesEvalShaWhenScriptCached(): void
-    {
-        $connection = $this->mockConnection();
-        $client = $connection->_mockClient;
-
-        $luaScript = "return redis.call('exists',KEYS[1])<1 and redis.call('setex',KEYS[1],ARGV[2],ARGV[1])";
-
-        // evalSha succeeds (script is already cached on server)
-        $client->shouldReceive('evalSha')
-            ->once()
-            ->with(sha1($luaScript), ['prefix:foo', serialize('bar'), 60], 1)
-            ->andReturn(true);
-
-        // eval should NOT be called when evalSha succeeds
-        $client->shouldNotReceive('eval');
 
         $redis = $this->createStore($connection);
         $result = $redis->add('foo', 'bar', 60);
@@ -77,19 +47,11 @@ class AddTest extends TestCase
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
 
-        $luaScript = "return redis.call('exists',KEYS[1])<1 and redis.call('setex',KEYS[1],ARGV[2],ARGV[1])";
-
-        // evalSha returns false (NOSCRIPT)
-        $client->shouldReceive('evalSha')
+        // SET with NX returns null/false when key already exists
+        $client->shouldReceive('set')
             ->once()
-            ->with(sha1($luaScript), m::type('array'), 1)
-            ->andReturn(false);
-
-        // eval also returns false (key already exists, Lua condition fails)
-        $client->shouldReceive('eval')
-            ->once()
-            ->with($luaScript, m::type('array'), 1)
-            ->andReturn(false);
+            ->with('prefix:foo', serialize('bar'), ['EX' => 60, 'NX'])
+            ->andReturn(null);
 
         $redis = $this->createStore($connection);
         $result = $redis->add('foo', 'bar', 60);
@@ -104,17 +66,53 @@ class AddTest extends TestCase
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
 
-        $luaScript = "return redis.call('exists',KEYS[1])<1 and redis.call('setex',KEYS[1],ARGV[2],ARGV[1])";
-
-        // Numeric values are passed as-is (not serialized) by serializeForLua
-        // evalSha succeeds with numeric value
-        $client->shouldReceive('evalSha')
+        // Numeric values are NOT serialized (optimization)
+        $client->shouldReceive('set')
             ->once()
-            ->with(sha1($luaScript), ['prefix:foo', '42', 60], 1)
+            ->with('prefix:foo', 42, ['EX' => 60, 'NX'])
             ->andReturn(true);
 
         $redis = $this->createStore($connection);
         $result = $redis->add('foo', 42, 60);
+        $this->assertTrue($result);
+    }
+
+    /**
+     * @test
+     */
+    public function testAddEnforcesMinimumTtlOfOne(): void
+    {
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
+        // TTL should be at least 1
+        $client->shouldReceive('set')
+            ->once()
+            ->with('prefix:foo', serialize('bar'), ['EX' => 1, 'NX'])
+            ->andReturn(true);
+
+        $redis = $this->createStore($connection);
+        $result = $redis->add('foo', 'bar', 0);
+        $this->assertTrue($result);
+    }
+
+    /**
+     * @test
+     */
+    public function testAddWithArrayValue(): void
+    {
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
+        $value = ['key' => 'value', 'nested' => ['a', 'b']];
+
+        $client->shouldReceive('set')
+            ->once()
+            ->with('prefix:foo', serialize($value), ['EX' => 120, 'NX'])
+            ->andReturn(true);
+
+        $redis = $this->createStore($connection);
+        $result = $redis->add('foo', $value, 120);
         $this->assertTrue($result);
     }
 }
