@@ -14,8 +14,6 @@ use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\Cache\Redis\Stub\FakeRedisClient;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
-use Redis;
-use RedisCluster;
 
 /**
  * Tests for the AllTag/Prune operation.
@@ -289,24 +287,7 @@ class PruneTest extends TestCase
      */
     public function testPruneClusterModeUsesSequentialCommands(): void
     {
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         // Cluster mode: _masters() returns array of master nodes
         $masterNode = ['127.0.0.1', 7000];
@@ -339,13 +320,6 @@ class PruneTest extends TestCase
 
         // Not empty, so no DEL
 
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
-
         $operation = new Prune($store->getContext());
         $result = $operation->execute();
 
@@ -359,24 +333,7 @@ class PruneTest extends TestCase
      */
     public function testPruneClusterModeDeletesEmptySets(): void
     {
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         // Cluster mode: _masters() returns array of master nodes
         $masterNode = ['127.0.0.1', 7000];
@@ -404,13 +361,6 @@ class PruneTest extends TestCase
             ->once()
             ->with('prefix:_all:tag:users:entries')
             ->andReturn(1);
-
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
 
         $operation = new Prune($store->getContext());
         $result = $operation->execute();
@@ -517,24 +467,7 @@ class PruneTest extends TestCase
      */
     public function testPruneClusterModeScansAllMasterNodes(): void
     {
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         // Cluster with 3 master nodes
         $masterNodes = [
@@ -571,13 +504,6 @@ class PruneTest extends TestCase
             ->times(3)
             ->andReturn(5); // Not empty
 
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
-
         $operation = new Prune($store->getContext());
         $result = $operation->execute();
 
@@ -598,24 +524,7 @@ class PruneTest extends TestCase
      */
     public function testPruneClusterModeDeduplicatesAcrossNodes(): void
     {
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         // Two master nodes
         $masterNodes = [
@@ -643,13 +552,6 @@ class PruneTest extends TestCase
         $clusterClient->shouldReceive('zCard')
             ->once()
             ->andReturn(3);
-
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
 
         $operation = new Prune($store->getContext());
         $result = $operation->execute();

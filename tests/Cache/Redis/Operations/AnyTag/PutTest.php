@@ -4,16 +4,9 @@ declare(strict_types=1);
 
 namespace Hypervel\Tests\Cache\Redis\Operations\AnyTag;
 
-use Hyperf\Redis\Pool\PoolFactory;
-use Hyperf\Redis\Pool\RedisPool;
-use Hyperf\Redis\RedisFactory;
-use Hypervel\Cache\RedisStore;
-use Hypervel\Redis\RedisConnection;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
-use Redis;
-use RedisCluster;
 
 /**
  * Tests for the Put operation (union tags).
@@ -64,26 +57,7 @@ class PutTest extends TestCase
      */
     public function testPutWithTagsUsesSequentialCommandsInClusterMode(): void
     {
-        // Use anonymous mock with RedisCluster type hint for instanceof check
-        // but without enforcing method signatures
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$redis, $clusterClient] = $this->createClusterStore(tagMode: 'any');
 
         // Cluster mode expectations
         $clusterClient->shouldReceive('smembers')->once()->andReturn([]);
@@ -101,14 +75,6 @@ class PutTest extends TestCase
 
         // ZADD for registry - use withAnyArgs to handle variable args
         $clusterClient->shouldReceive('zadd')->withAnyArgs()->once()->andReturn(2);
-
-        $redis = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
-        $redis->setTagMode('any');
 
         $result = $redis->anyTagOps()->put()->execute('foo', 'bar', 60, ['users', 'posts']);
         $this->assertTrue($result);

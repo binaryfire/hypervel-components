@@ -5,17 +5,10 @@ declare(strict_types=1);
 namespace Hypervel\Tests\Cache\Redis\Operations\AllTag;
 
 use Carbon\Carbon;
-use Hyperf\Redis\Pool\PoolFactory;
-use Hyperf\Redis\Pool\RedisPool;
-use Hyperf\Redis\RedisFactory;
 use Hypervel\Cache\Redis\Operations\AllTag\AddEntry;
-use Hypervel\Cache\RedisStore;
-use Hypervel\Redis\RedisConnection;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
-use Redis;
-use RedisCluster;
 
 /**
  * Tests for the AddEntry operation.
@@ -262,24 +255,7 @@ class AddEntryTest extends TestCase
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         // Should NOT use pipeline in cluster mode
         $clusterClient->shouldNotReceive('pipeline');
@@ -289,13 +265,6 @@ class AddEntryTest extends TestCase
             ->once()
             ->with('prefix:_all:tag:users:entries', now()->timestamp + 300, 'mykey')
             ->andReturn(1);
-
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
 
         $operation = new AddEntry($store->getContext());
         $operation->execute('mykey', 300, ['_all:tag:users:entries']);
@@ -308,24 +277,7 @@ class AddEntryTest extends TestCase
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         // Should NOT use pipeline in cluster mode
         $clusterClient->shouldNotReceive('pipeline');
@@ -345,13 +297,6 @@ class AddEntryTest extends TestCase
             ->with('prefix:_all:tag:comments:entries', $expectedScore, 'mykey')
             ->andReturn(1);
 
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
-
         $operation = new AddEntry($store->getContext());
         $operation->execute('mykey', 60, ['_all:tag:users:entries', '_all:tag:posts:entries', '_all:tag:comments:entries']);
     }
@@ -361,37 +306,13 @@ class AddEntryTest extends TestCase
      */
     public function testAddEntryClusterModeWithUpdateWhenFlag(): void
     {
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         // Should use zadd with NX flag as array (phpredis requires array for options)
         $clusterClient->shouldReceive('zadd')
             ->once()
             ->with('prefix:_all:tag:users:entries', ['NX'], -1, 'mykey')
             ->andReturn(1);
-
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
 
         $operation = new AddEntry($store->getContext());
         $operation->execute('mykey', 0, ['_all:tag:users:entries'], 'NX');
@@ -402,37 +323,13 @@ class AddEntryTest extends TestCase
      */
     public function testAddEntryClusterModeWithZeroTtlStoresNegativeOne(): void
     {
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         // Score should be -1 for forever items (TTL = 0)
         $clusterClient->shouldReceive('zadd')
             ->once()
             ->with('prefix:_all:tag:users:entries', -1, 'mykey')
             ->andReturn(1);
-
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
 
         $operation = new AddEntry($store->getContext());
         $operation->execute('mykey', 0, ['_all:tag:users:entries']);

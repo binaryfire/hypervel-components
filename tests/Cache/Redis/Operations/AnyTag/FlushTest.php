@@ -4,18 +4,11 @@ declare(strict_types=1);
 
 namespace Hypervel\Tests\Cache\Redis\Operations\AnyTag;
 
-use Hyperf\Redis\Pool\PoolFactory;
-use Hyperf\Redis\Pool\RedisPool;
-use Hyperf\Redis\RedisFactory;
 use Hypervel\Cache\Redis\Operations\AnyTag\Flush;
 use Hypervel\Cache\Redis\Operations\AnyTag\GetTaggedKeys;
-use Hypervel\Cache\RedisStore;
-use Hypervel\Redis\RedisConnection;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
-use Redis;
-use RedisCluster;
 
 /**
  * Tests for the Flush operation (union tags).
@@ -236,24 +229,7 @@ class FlushTest extends TestCase
      */
     public function testFlushClusterModeUsesSequentialCommands(): void
     {
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore(tagMode: 'any');
 
         $getTaggedKeys = m::mock(GetTaggedKeys::class);
         $getTaggedKeys->shouldReceive('execute')
@@ -288,14 +264,6 @@ class FlushTest extends TestCase
             ->with('prefix:_any:tag:registry', 'users')
             ->andReturn(1);
 
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
-        $store->setTagMode('any');
-
         $operation = new Flush($store->getContext(), $getTaggedKeys);
         $result = $operation->execute(['users']);
         $this->assertTrue($result);
@@ -306,24 +274,7 @@ class FlushTest extends TestCase
      */
     public function testFlushClusterModeWithMultipleTags(): void
     {
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore(tagMode: 'any');
 
         $getTaggedKeys = m::mock(GetTaggedKeys::class);
         $getTaggedKeys->shouldReceive('execute')
@@ -339,14 +290,6 @@ class FlushTest extends TestCase
         $clusterClient->shouldReceive('del')->andReturn(1);
         $clusterClient->shouldReceive('unlink')->andReturn(1);
         $clusterClient->shouldReceive('zrem')->andReturn(1);
-
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
-        $store->setTagMode('any');
 
         $operation = new Flush($store->getContext(), $getTaggedKeys);
         $result = $operation->execute(['users', 'posts']);

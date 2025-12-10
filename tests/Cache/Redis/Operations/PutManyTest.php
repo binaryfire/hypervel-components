@@ -4,16 +4,9 @@ declare(strict_types=1);
 
 namespace Hypervel\Tests\Cache\Redis\Operations;
 
-use Hyperf\Redis\Pool\PoolFactory;
-use Hyperf\Redis\Pool\RedisPool;
-use Hyperf\Redis\RedisFactory;
-use Hypervel\Cache\RedisStore;
-use Hypervel\Redis\RedisConnection;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
-use Redis;
-use RedisCluster;
 
 /**
  * Tests for the PutMany operation.
@@ -68,22 +61,7 @@ class PutManyTest extends TestCase
      */
     public function testPutManyUsesMultiInClusterMode(): void
     {
-        // Use RedisCluster mock with shouldIgnoreMissing to handle return type constraints
-        $clusterClient = m::mock(RedisCluster::class)->shouldIgnoreMissing();
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$redis, $clusterClient] = $this->createClusterStore();
 
         // RedisCluster::multi() returns $this (fluent interface)
         $clusterClient->shouldReceive('multi')->once()->andReturn($clusterClient);
@@ -91,12 +69,6 @@ class PutManyTest extends TestCase
         $clusterClient->shouldReceive('setex')->once()->with('prefix:baz', 60, serialize('qux'))->andReturn($clusterClient);
         $clusterClient->shouldReceive('exec')->once()->andReturn([true, true]);
 
-        $redis = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
         $result = $redis->putMany([
             'foo' => 'bar',
             'baz' => 'qux',
@@ -109,31 +81,13 @@ class PutManyTest extends TestCase
      */
     public function testPutManyClusterModeReturnsFalseOnFailure(): void
     {
-        $clusterClient = m::mock(RedisCluster::class)->shouldIgnoreMissing();
-        $clusterClient->shouldReceive('getOption')->andReturn(Redis::COMPRESSION_NONE);
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$redis, $clusterClient] = $this->createClusterStore();
 
         // RedisCluster::multi() returns $this (fluent interface)
         $clusterClient->shouldReceive('multi')->once()->andReturn($clusterClient);
         $clusterClient->shouldReceive('setex')->twice()->andReturn($clusterClient);
         $clusterClient->shouldReceive('exec')->once()->andReturn([true, false]); // One failed
 
-        $redis = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
         $result = $redis->putMany([
             'foo' => 'bar',
             'baz' => 'qux',

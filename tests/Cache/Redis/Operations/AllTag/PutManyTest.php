@@ -5,16 +5,9 @@ declare(strict_types=1);
 namespace Hypervel\Tests\Cache\Redis\Operations\AllTag;
 
 use Carbon\Carbon;
-use Hyperf\Redis\Pool\PoolFactory;
-use Hyperf\Redis\Pool\RedisPool;
-use Hyperf\Redis\RedisFactory;
-use Hypervel\Cache\RedisStore;
-use Hypervel\Redis\RedisConnection;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
-use Redis;
-use RedisCluster;
 
 /**
  * Tests for the PutMany operation (intersection tags).
@@ -179,24 +172,7 @@ class PutManyTest extends TestCase
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         // Should NOT use pipeline in cluster mode
         $clusterClient->shouldNotReceive('pipeline');
@@ -220,13 +196,6 @@ class PutManyTest extends TestCase
             ->once()
             ->with('prefix:ns:baz', 60, serialize('qux'))
             ->andReturn(true);
-
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
 
         $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'bar', 'baz' => 'qux'],
@@ -473,24 +442,7 @@ class PutManyTest extends TestCase
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         $expectedScore = now()->timestamp + 60;
 
@@ -516,13 +468,6 @@ class PutManyTest extends TestCase
             ->with('prefix:ns:bar', 60, serialize('value2'))
             ->andReturn(true);
 
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
-
         $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'value1', 'bar' => 'value2'],
             60,
@@ -540,24 +485,7 @@ class PutManyTest extends TestCase
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         // No ZADD calls for empty tags
         $clusterClient->shouldNotReceive('zadd');
@@ -567,13 +495,6 @@ class PutManyTest extends TestCase
             ->once()
             ->with('prefix:ns:foo', 60, serialize('bar'))
             ->andReturn(true);
-
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
 
         $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'bar'],
@@ -592,24 +513,7 @@ class PutManyTest extends TestCase
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         $expectedScore = now()->timestamp + 60;
 
@@ -629,13 +533,6 @@ class PutManyTest extends TestCase
             ->with('prefix:ns:bar', 60, serialize('value2'))
             ->andReturn(false);
 
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
-
         $result = $store->allTagOps()->putMany()->execute(
             ['foo' => 'value1', 'bar' => 'value2'],
             60,
@@ -651,35 +548,11 @@ class PutManyTest extends TestCase
      */
     public function testPutManyInClusterModeWithEmptyValuesReturnsTrue(): void
     {
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         // No operations for empty values
         $clusterClient->shouldNotReceive('zadd');
         $clusterClient->shouldNotReceive('setex');
-
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
 
         $result = $store->allTagOps()->putMany()->execute(
             [],

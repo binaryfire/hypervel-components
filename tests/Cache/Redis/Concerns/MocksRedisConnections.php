@@ -18,6 +18,26 @@ use RedisCluster;
  *
  * Provides helper methods for mocking Redis connections, pool factories,
  * and creating RedisStore instances for testing.
+ *
+ * ## Usage Examples
+ *
+ * ### Standard (non-cluster) tests:
+ * ```php
+ * $connection = $this->mockConnection();
+ * $client = $connection->_mockClient;
+ * $client->shouldReceive('set')->once()->andReturn(true);
+ *
+ * $store = $this->createStore($connection);
+ * // or with tag mode:
+ * $store = $this->createStore($connection, tagMode: 'any');
+ * ```
+ *
+ * ### Cluster mode tests:
+ * ```php
+ * [$store, $clusterClient] = $this->createClusterStore();
+ * $clusterClient->shouldNotReceive('pipeline');
+ * $clusterClient->shouldReceive('set')->once()->andReturn(true);
+ * ```
  */
 trait MocksRedisConnections
 {
@@ -25,12 +45,14 @@ trait MocksRedisConnections
      * Create a mock RedisConnection with standard expectations.
      *
      * By default creates a mock with a standard Redis client (not cluster).
-     * Use mockClusterConnection() for cluster mode tests.
+     * Use createClusterStore() for cluster mode tests.
      *
      * We use an anonymous mock for the client (not m::mock(Redis::class))
      * because mocking the native phpredis extension class can cause
      * unexpected fallthrough to real Redis connections when expectations
      * don't match.
+     *
+     * @return m\MockInterface|RedisConnection Connection with _mockClient property for setting expectations
      */
     protected function mockConnection(): m\MockInterface|RedisConnection
     {
@@ -65,7 +87,9 @@ trait MocksRedisConnections
      * Create a mock RedisConnection configured as a cluster connection.
      *
      * The client mock is configured to pass instanceof RedisCluster checks
-     * which triggers cluster mode in PutMany (uses multi() instead of Lua).
+     * which triggers cluster mode (sequential commands instead of pipelines).
+     *
+     * @return m\MockInterface|RedisConnection Connection with _mockClient property for setting expectations
      */
     protected function mockClusterConnection(): m\MockInterface|RedisConnection
     {
@@ -74,6 +98,10 @@ trait MocksRedisConnections
         $client->shouldReceive('getOption')
             ->with(Redis::OPT_COMPRESSION)
             ->andReturn(Redis::COMPRESSION_NONE)
+            ->byDefault();
+        $client->shouldReceive('getOption')
+            ->with(Redis::OPT_PREFIX)
+            ->andReturn('')
             ->byDefault();
 
         $connection = m::mock(RedisConnection::class);
@@ -108,17 +136,69 @@ trait MocksRedisConnections
 
     /**
      * Create a RedisStore with a mocked connection.
+     *
+     * @param m\MockInterface|RedisConnection $connection The mocked connection (from mockConnection())
+     * @param string $prefix Cache key prefix
+     * @param string $connectionName Redis connection name
+     * @param string|null $tagMode Optional tag mode ('any' or 'all'). If provided, setTagMode() is called.
      */
     protected function createStore(
         m\MockInterface|RedisConnection $connection,
         string $prefix = 'prefix:',
-        string $connectionName = 'default'
+        string $connectionName = 'default',
+        ?string $tagMode = null,
     ): RedisStore {
-        return new RedisStore(
+        $store = new RedisStore(
             m::mock(RedisFactory::class),
             $prefix,
             $connectionName,
             $this->createPoolFactory($connection, $connectionName)
         );
+
+        if ($tagMode !== null) {
+            $store->setTagMode($tagMode);
+        }
+
+        return $store;
+    }
+
+    /**
+     * Create a RedisStore configured for cluster mode testing.
+     *
+     * This eliminates the boilerplate of manually setting up RedisCluster mocks,
+     * connection mocks, pool mocks, and pool factory mocks for each cluster test.
+     *
+     * Returns both the store and the cluster client mock so tests can set expectations:
+     * ```php
+     * [$store, $clusterClient] = $this->createClusterStore();
+     * $clusterClient->shouldNotReceive('pipeline');
+     * $clusterClient->shouldReceive('zadd')->once()->andReturn(1);
+     * ```
+     *
+     * @param string $prefix Cache key prefix
+     * @param string $connectionName Redis connection name
+     * @param string|null $tagMode Optional tag mode ('any' or 'all')
+     * @return array{0: RedisStore, 1: m\MockInterface} [store, clusterClient]
+     */
+    protected function createClusterStore(
+        string $prefix = 'prefix:',
+        string $connectionName = 'default',
+        ?string $tagMode = null,
+    ): array {
+        $connection = $this->mockClusterConnection();
+        $clusterClient = $connection->_mockClient;
+
+        $store = new RedisStore(
+            m::mock(RedisFactory::class),
+            $prefix,
+            $connectionName,
+            $this->createPoolFactory($connection, $connectionName)
+        );
+
+        if ($tagMode !== null) {
+            $store->setTagMode($tagMode);
+        }
+
+        return [$store, $clusterClient];
     }
 }

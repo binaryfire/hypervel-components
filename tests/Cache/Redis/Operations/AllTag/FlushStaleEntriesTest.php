@@ -5,17 +5,10 @@ declare(strict_types=1);
 namespace Hypervel\Tests\Cache\Redis\Operations\AllTag;
 
 use Carbon\Carbon;
-use Hyperf\Redis\Pool\PoolFactory;
-use Hyperf\Redis\Pool\RedisPool;
-use Hyperf\Redis\RedisFactory;
 use Hypervel\Cache\Redis\Operations\AllTag\FlushStaleEntries;
-use Hypervel\Cache\RedisStore;
-use Hypervel\Redis\RedisConnection;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
-use Redis;
-use RedisCluster;
 
 /**
  * Tests for the FlushStaleEntries operation.
@@ -199,24 +192,7 @@ class FlushStaleEntriesTest extends TestCase
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         // Should NOT use pipeline in cluster mode
         $clusterClient->shouldNotReceive('pipeline');
@@ -226,13 +202,6 @@ class FlushStaleEntriesTest extends TestCase
             ->once()
             ->with('prefix:_all:tag:users:entries', '0', (string) now()->getTimestamp())
             ->andReturn(5);
-
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
 
         $operation = new FlushStaleEntries($store->getContext());
         $operation->execute(['_all:tag:users:entries']);
@@ -245,24 +214,7 @@ class FlushStaleEntriesTest extends TestCase
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore();
 
         // Should NOT use pipeline in cluster mode
         $clusterClient->shouldNotReceive('pipeline');
@@ -282,13 +234,6 @@ class FlushStaleEntriesTest extends TestCase
             ->with('prefix:_all:tag:comments:entries', '0', $timestamp)
             ->andReturn(0);
 
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'prefix:',
-            'default',
-            $poolFactory
-        );
-
         $operation = new FlushStaleEntries($store->getContext());
         $operation->execute(['_all:tag:users:entries', '_all:tag:posts:entries', '_all:tag:comments:entries']);
     }
@@ -300,37 +245,13 @@ class FlushStaleEntriesTest extends TestCase
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
-        $clusterClient = m::mock(RedisCluster::class);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_COMPRESSION)
-            ->andReturn(Redis::COMPRESSION_NONE);
-        $clusterClient->shouldReceive('getOption')
-            ->with(Redis::OPT_PREFIX)
-            ->andReturn('');
-
-        $connection = m::mock(RedisConnection::class);
-        $connection->shouldReceive('release')->zeroOrMoreTimes();
-        $connection->shouldReceive('serialized')->andReturn(false);
-        $connection->shouldReceive('client')->andReturn($clusterClient);
-
-        $pool = m::mock(RedisPool::class);
-        $pool->shouldReceive('get')->andReturn($connection);
-
-        $poolFactory = m::mock(PoolFactory::class);
-        $poolFactory->shouldReceive('getPool')->with('default')->andReturn($pool);
+        [$store, $clusterClient] = $this->createClusterStore(prefix: 'custom_prefix:');
 
         // Should use custom prefix
         $clusterClient->shouldReceive('zRemRangeByScore')
             ->once()
             ->with('custom_prefix:_all:tag:users:entries', '0', (string) now()->getTimestamp())
             ->andReturn(1);
-
-        $store = new RedisStore(
-            m::mock(RedisFactory::class),
-            'custom_prefix:',
-            'default',
-            $poolFactory
-        );
 
         $operation = new FlushStaleEntries($store->getContext());
         $operation->execute(['_all:tag:users:entries']);
