@@ -9,6 +9,9 @@ use Redis;
 /**
  * Fake Redis client for testing SCAN/HSCAN operations with proper reference parameter handling.
  *
+ * Extends Redis to satisfy type hints (Redis|RedisCluster) while providing
+ * controlled test behavior. Does NOT connect to any real Redis server.
+ *
  * Mockery's andReturnUsing doesn't properly propagate modifications to reference
  * parameters back to the caller. This stub properly implements the &$iterator
  * reference parameter behavior that phpredis's scan()/hScan() uses.
@@ -34,8 +37,10 @@ use Redis;
  *     ]
  * );
  * ```
+ *
+ * @internal For testing only - does not connect to Redis
  */
-class FakeRedisClient
+class FakeRedisClient extends Redis
 {
     /**
      * Configured scan results: array of ['keys' => [...], 'iterator' => int].
@@ -116,6 +121,11 @@ class FakeRedisClient
     private array $hLenResults = [];
 
     /**
+     * Configured OPT_PREFIX value for getOption().
+     */
+    private string $optPrefix = '';
+
+    /**
      * Create a new fake Redis client.
      *
      * @param array<int, array{keys: array<string>, iterator: int}> $scanResults Configured scan results
@@ -123,6 +133,7 @@ class FakeRedisClient
      * @param array<string, array<int, array{fields: array<string, string>, iterator: int}>> $hScanResults Configured hScan results
      * @param array<string, array<string>> $zRangeResults Configured zRange results
      * @param array<string, int> $hLenResults Configured hLen results
+     * @param string $optPrefix Configured OPT_PREFIX value
      */
     public function __construct(
         array $scanResults = [],
@@ -130,12 +141,16 @@ class FakeRedisClient
         array $hScanResults = [],
         array $zRangeResults = [],
         array $hLenResults = [],
+        string $optPrefix = '',
     ) {
+        // Note: We intentionally do NOT call parent::__construct() to avoid
+        // any connection attempts. This fake client never connects to Redis.
         $this->scanResults = $scanResults;
         $this->execResults = $execResults;
         $this->hScanResults = $hScanResults;
         $this->zRangeResults = $zRangeResults;
         $this->hLenResults = $hLenResults;
+        $this->optPrefix = $optPrefix;
     }
 
     /**
@@ -144,9 +159,10 @@ class FakeRedisClient
      * @param int|string|null $iterator Cursor (modified by reference)
      * @param string|null $pattern Optional pattern to match
      * @param int $count Optional count hint
+     * @param string|null $type Optional type filter
      * @return array<string>|false
      */
-    public function scan(int|string|null &$iterator, ?string $pattern = null, int $count = 0): array|false
+    public function scan(int|string|null &$iterator, ?string $pattern = null, int $count = 0, ?string $type = null): array|false
     {
         // Record the call for assertions
         $this->scanCalls[] = ['pattern' => $pattern, 'count' => $count];
@@ -186,11 +202,11 @@ class FakeRedisClient
      *
      * @param string $key Hash key
      * @param int|string|null $iterator Cursor (modified by reference)
-     * @param string $pattern Optional pattern to match
+     * @param string|null $pattern Optional pattern to match
      * @param int $count Optional count hint
-     * @return array<string, string>|false
+     * @return Redis|array<string, string>|bool
      */
-    public function hScan(string $key, int|string|null &$iterator, string $pattern = '*', int $count = 0): array|false
+    public function hscan(string $key, int|string|null &$iterator, ?string $pattern = null, int $count = 0): Redis|array|bool
     {
         // Record the call for assertions
         $this->hScanCalls[] = ['key' => $key, 'pattern' => $pattern, 'count' => $count];
@@ -237,7 +253,7 @@ class FakeRedisClient
     {
         return match ($option) {
             Redis::OPT_COMPRESSION => Redis::COMPRESSION_NONE,
-            Redis::OPT_PREFIX => '',
+            Redis::OPT_PREFIX => $this->optPrefix,
             default => null,
         };
     }
@@ -245,9 +261,9 @@ class FakeRedisClient
     /**
      * Simulate zRange to get sorted set members.
      *
-     * @return array<string>
+     * @return Redis|array<string>|false
      */
-    public function zRange(string $key, int $start, int $end): array
+    public function zRange(string $key, string|int $start, string|int $end, array|bool|null $options = null): Redis|array|false
     {
         return $this->zRangeResults[$key] ?? [];
     }
@@ -255,7 +271,7 @@ class FakeRedisClient
     /**
      * Simulate hLen to get hash length.
      */
-    public function hLen(string $key): int
+    public function hLen(string $key): Redis|int|false
     {
         return $this->hLenResults[$key] ?? 0;
     }
@@ -263,12 +279,14 @@ class FakeRedisClient
     /**
      * Queue exists in pipeline or execute directly.
      *
-     * @return $this|int
+     * @return $this|int|bool
      */
-    public function exists(string $key): static|int
+    public function exists(mixed $key, mixed ...$other_keys): Redis|int|bool
     {
+        $keys = is_array($key) ? $key : array_merge([$key], $other_keys);
+
         if ($this->inPipeline) {
-            $this->pipelineQueue[] = ['method' => 'exists', 'args' => [$key]];
+            $this->pipelineQueue[] = ['method' => 'exists', 'args' => $keys];
             return $this;
         }
         return 0;
@@ -277,9 +295,9 @@ class FakeRedisClient
     /**
      * Queue hDel in pipeline or execute directly.
      *
-     * @return $this|int
+     * @return $this|int|false
      */
-    public function hDel(string $key, string ...$fields): static|int
+    public function hDel(string $key, string ...$fields): Redis|int|false
     {
         if ($this->inPipeline) {
             $this->pipelineQueue[] = ['method' => 'hDel', 'args' => [$key, ...$fields]];
@@ -293,7 +311,7 @@ class FakeRedisClient
      *
      * @return $this
      */
-    public function pipeline(): static
+    public function pipeline(): Redis
     {
         $this->inPipeline = true;
         $this->pipelineQueue = [];
@@ -303,9 +321,9 @@ class FakeRedisClient
     /**
      * Execute pipeline and return results.
      *
-     * @return array<mixed>
+     * @return array<mixed>|false
      */
-    public function exec(): array
+    public function exec(): array|false
     {
         $this->inPipeline = false;
 
@@ -322,9 +340,9 @@ class FakeRedisClient
     /**
      * Queue zRemRangeByScore in pipeline or execute directly.
      *
-     * @return $this|int
+     * @return $this|int|false
      */
-    public function zRemRangeByScore(string $key, string $min, string $max): static|int
+    public function zRemRangeByScore(string $key, string $min, string $max): Redis|int|false
     {
         if ($this->inPipeline) {
             $this->pipelineQueue[] = ['method' => 'zRemRangeByScore', 'args' => [$key, $min, $max]];
@@ -336,9 +354,9 @@ class FakeRedisClient
     /**
      * Queue zCard in pipeline or execute directly.
      *
-     * @return $this|int
+     * @return $this|int|false
      */
-    public function zCard(string $key): static|int
+    public function zCard(string $key): Redis|int|false
     {
         if ($this->inPipeline) {
             $this->pipelineQueue[] = ['method' => 'zCard', 'args' => [$key]];
@@ -350,10 +368,12 @@ class FakeRedisClient
     /**
      * Queue del in pipeline or execute directly.
      *
-     * @return $this|int
+     * @return $this|int|false
      */
-    public function del(string ...$keys): static|int
+    public function del(array|string $key, string ...$other_keys): Redis|int|false
     {
+        $keys = is_array($key) ? $key : array_merge([$key], $other_keys);
+
         if ($this->inPipeline) {
             $this->pipelineQueue[] = ['method' => 'del', 'args' => $keys];
             return $this;
@@ -362,9 +382,10 @@ class FakeRedisClient
     }
 
     /**
-     * Reset the client state for reuse.
+     * Reset the client state for reuse in tests.
+     * Note: This is a test helper, not the Redis::reset() connection reset.
      */
-    public function reset(): void
+    public function resetFakeState(): void
     {
         $this->scanCallIndex = 0;
         $this->scanCalls = [];
