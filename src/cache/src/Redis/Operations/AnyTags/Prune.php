@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\UnionTags;
+namespace Hypervel\Cache\Redis\Operations\AnyTags;
 
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Prune orphaned fields from union tag hashes.
+ * Prune orphaned fields from any tag hashes.
  *
- * This operation performs a complete cleanup of union-mode tag data:
+ * This operation performs a complete cleanup of any-mode tag data:
  * 1. Removes expired tags from the registry (ZREMRANGEBYSCORE)
  * 2. Gets active tags from the registry (ZRANGE)
  * 3. Scans each tag hash for orphaned fields (HSCAN + EXISTS checks)

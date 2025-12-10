@@ -41,16 +41,16 @@ class PruneStaleTagsCommand extends Command
             return 1;
         }
 
-        $taggingMode = $store->getTaggingMode();
-        $this->info("Pruning stale tags from '{$storeName}' store ({$taggingMode} mode)...");
+        $tagMode = $store->getTagMode();
+        $this->info("Pruning stale tags from '{$storeName}' store ({$tagMode->value} mode)...");
         $this->newLine();
 
-        if ($taggingMode === 'union') {
-            $stats = $store->unionTagOps()->prune()->execute();
-            $this->displayUnionStats($stats);
+        if ($tagMode->isAny()) {
+            $stats = $store->anyTagOps()->prune()->execute();
+            $this->displayAnyModeStats($stats);
         } else {
-            $stats = $store->intersectionTagOps()->prune()->execute();
-            $this->displayIntersectionStats($stats);
+            $stats = $store->allTagOps()->prune()->execute();
+            $this->displayAllModeStats($stats);
         }
 
         $this->newLine();
@@ -60,11 +60,11 @@ class PruneStaleTagsCommand extends Command
     }
 
     /**
-     * Display stats for intersection mode pruning.
+     * Display stats for all mode pruning.
      *
      * @param array{tags_scanned: int, entries_removed: int, empty_sets_deleted: int} $stats
      */
-    protected function displayIntersectionStats(array $stats): void
+    protected function displayAllModeStats(array $stats): void
     {
         $this->table(
             ['Metric', 'Value'],
@@ -77,11 +77,11 @@ class PruneStaleTagsCommand extends Command
     }
 
     /**
-     * Display stats for union mode pruning.
+     * Display stats for any mode pruning.
      *
      * @param array{hashes_scanned: int, fields_checked: int, orphans_removed: int, empty_hashes_deleted: int, expired_tags_removed: int} $stats
      */
-    protected function displayUnionStats(array $stats): void
+    protected function displayAnyModeStats(array $stats): void
     {
         $this->table(
             ['Metric', 'Value'],

@@ -2,33 +2,24 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\UnionTags;
+namespace Hypervel\Cache\Redis\Operations\AnyTags;
 
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Store an item in the cache with tags support.
+ * Store an item in the cache if it doesn't exist, with tags support.
  *
- * This operation creates:
- * 1. The cache key with TTL
- * 2. A reverse index SET tracking which tags this key belongs to
- * 3. Hash field entries in each tag's hash with expiration using HSETEX
+ * Uses Redis SET with NX flag for atomic "add if not exists" operation.
+ * Only adds tag entries if the cache key was successfully created.
  *
- * The reverse index is critical for proper cleanup during flush operations.
- * Without it, flushing one tag would leave orphaned fields in other tag hashes.
- *
- * Performance: Uses atomic HSETEX command (Redis 8.0+) for 30-40% reduction
- * in Redis commands compared to HSET + HEXPIRE pattern.
- *
- * Memory overhead: ~60 bytes per cached item (reverse index SET)
- * Command count: 4 base commands + (1 x N tags) with HSETEX optimization
+ * Performance: Uses atomic HSETEX for tag entries after successful add.
  */
-class Put
+class Add
 {
     /**
-     * Create a new put with tags operation instance.
+     * Create a new add with tags operation instance.
      */
     public function __construct(
         private readonly StoreContext $context,
@@ -36,13 +27,13 @@ class Put
     ) {}
 
     /**
-     * Execute the put operation.
+     * Execute the add operation.
      *
      * @param string $key The cache key (without prefix)
      * @param mixed $value The value to store (will be serialized)
      * @param int $seconds TTL in seconds (must be > 0)
      * @param array<int, string|int> $tags Array of tag names (will be cast to strings)
-     * @return bool True if successful, false on failure
+     * @return bool True if item was added, false if it already exists
      */
     public function execute(string $key, mixed $value, int $seconds, array $tags): bool
     {
@@ -64,38 +55,33 @@ class Put
             $client = $conn->client();
             $prefix = $this->context->prefix();
 
-            // Get old tags to handle replacement correctly (remove from old, add to new)
-            $tagsKey = $this->context->reverseIndexKey($key);
-            $oldTags = $client->smembers($tagsKey);
-
-            // Store the actual cache value
-            $client->setex(
+            // First try to add the key with NX flag
+            $added = $client->set(
                 $prefix . $key,
-                max(1, $seconds),
-                $this->serialization->serialize($value)
+                $this->serialization->serialize($value),
+                ['EX' => max(1, $seconds), 'NX']
             );
 
+            if (! $added) {
+                return false;
+            }
+
+            // If successfully added, add to tags
+            // Note: RedisCluster does not support pipeline(), so we execute sequentially.
+            // This means we lose atomicity for the tag updates, but that's the trade-off for clusters.
+
             // Store reverse index of tags for this key
-            // Use multi() as these keys are in the same slot
-            $multi = $client->multi();
-            $multi->del($tagsKey); // Clear old tags
+            $tagsKey = $this->context->reverseIndexKey($key);
 
             if (! empty($tags)) {
+                // Use multi() for reverse index updates (same slot)
+                $multi = $client->multi();
                 $multi->sadd($tagsKey, ...$tags);
                 $multi->expire($tagsKey, max(1, $seconds));
+                $multi->exec();
             }
 
-            $multi->exec();
-
-            // Remove item from tags it no longer belongs to
-            $tagsToRemove = array_diff($oldTags, $tags);
-
-            foreach ($tagsToRemove as $tag) {
-                $tag = (string) $tag;
-                $client->hdel($this->context->tagHashKey($tag), $key);
-            }
-
-            // Add to each tag's hash with expiration (using HSETEX for atomic operation)
+            // Add to tags with field expiration (using HSETEX for atomic operation)
             // And update the Tag Registry
             $registryKey = $this->context->registryKey();
             $expiry = time() + $seconds;
@@ -103,13 +89,7 @@ class Put
             // 1. Update Tag Hashes (Cross-slot, must be sequential)
             foreach ($tags as $tag) {
                 $tag = (string) $tag;
-
-                // Use HSETEX to set field and expiration atomically in one command
-                $client->hsetex(
-                    $this->context->tagHashKey($tag),
-                    [$key => StoreContext::TAG_FIELD_VALUE],
-                    ['EX' => $seconds]
-                );
+                $client->hsetex($this->context->tagHashKey($tag), [$key => StoreContext::TAG_FIELD_VALUE], ['EX' => $seconds]);
             }
 
             // 2. Update Registry (Same slot, single command optimization)
@@ -130,7 +110,7 @@ class Put
     }
 
     /**
-     * Execute using Lua script for performance.
+     * Execute using Lua script for better performance.
      */
     private function executeUsingLua(string $key, mixed $value, int $seconds, array $tags): bool
     {
@@ -150,41 +130,31 @@ class Put
                 local tagHashSuffix = ARGV[7]
                 local expiry = now + ttl
 
-                -- 1. Set Cache
-                redis.call('SETEX', key, ttl, val)
+                -- 1. Try to add key (SET NX)
+                -- redis.call returns a table/object for OK, or false/nil
+                local added = redis.call('SET', key, val, 'EX', ttl, 'NX')
 
-                -- 2. Get Old Tags
-                local oldTags = redis.call('SMEMBERS', tagsKey)
-                local newTagsMap = {}
+                if not added then
+                    return false
+                end
+
+                -- 2. Add to Tags Reverse Index
                 local newTagsList = {}
-
-                -- Parse new tags
                 for i = 8, #ARGV do
-                    local tag = ARGV[i]
-                    newTagsMap[tag] = true
-                    table.insert(newTagsList, tag)
+                    table.insert(newTagsList, ARGV[i])
                 end
 
-                -- 3. Remove from Old Tags
-                for _, tag in ipairs(oldTags) do
-                    if not newTagsMap[tag] then
-                        local tagHash = tagPrefix .. tag .. tagHashSuffix
-                        redis.call('HDEL', tagHash, rawKey)
-                    end
-                end
-
-                -- 4. Update Tags Key
-                redis.call('DEL', tagsKey)
                 if #newTagsList > 0 then
                     redis.call('SADD', tagsKey, unpack(newTagsList))
                     redis.call('EXPIRE', tagsKey, ttl)
                 end
 
-                -- 5. Add to New Tags & Registry
+                -- 3. Add to Tag Hashes & Registry
                 for _, tag in ipairs(newTagsList) do
                     local tagHash = tagPrefix .. tag .. tagHashSuffix
-                    -- Use HSETEX for atomic field creation and expiration (Redis 8.0+)
-                    redis.call('HSETEX', tagHash, 'EX', ttl, 'FIELDS', 1, rawKey, '1')
+                    -- Use HSET + HEXPIRE instead of HSETEX to avoid potential Lua argument issues
+                    redis.call('HSET', tagHash, rawKey, '1')
+                    redis.call('HEXPIRE', tagHash, ttl, 'FIELDS', 1, rawKey)
                     redis.call('ZADD', registryKey, 'GT', expiry, tag)
                 end
 
@@ -209,10 +179,10 @@ LUA;
 
             // evalSha returns false if script not loaded (NOSCRIPT), fall back to eval
             if ($result === false) {
-                $client->eval($script, $args, 2);
+                $result = $client->eval($script, $args, 2);
             }
 
-            return true;
+            return (bool) $result;
         });
     }
 }

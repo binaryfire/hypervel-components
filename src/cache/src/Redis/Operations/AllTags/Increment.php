@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Cache\Redis\Operations\AllTags;
 
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Increment a value in the cache with intersection tag tracking.
+ * Increment a value in the cache with all tag tracking.
  *
  * Combines the ZADD NX operations for tag tracking with INCRBY
  * in a single connection checkout for efficiency.

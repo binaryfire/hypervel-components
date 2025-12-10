@@ -11,8 +11,8 @@ use Throwable;
 /**
  * Checks that Redis/Valkey version meets requirements.
  *
- * For union mode: Requires Redis 8.0+ or Valkey 9.0+ for HEXPIRE support.
- * For intersection mode: Any version is acceptable (just verifies connection).
+ * For any mode: Requires Redis 8.0+ or Valkey 9.0+ for HEXPIRE support.
+ * For all mode: Any version is acceptable (just verifies connection).
  */
 final class RedisVersionCheck implements EnvironmentCheckInterface
 {
@@ -59,17 +59,17 @@ final class RedisVersionCheck implements EnvironmentCheckInterface
 
             $result->assert(true, "{$this->serviceName} server is reachable (v{$this->serviceVersion})");
 
-            // Version requirement only applies to union mode
-            if ($this->taggingMode === 'union') {
+            // Version requirement only applies to any mode
+            if ($this->taggingMode === 'any') {
                 $versionOk = version_compare($this->serviceVersion, $requiredVersion, '>=');
                 $result->assert(
                     $versionOk,
-                    "{$this->serviceName} version >= {$requiredVersion} (required for union tagging mode)"
+                    "{$this->serviceName} version >= {$requiredVersion} (required for any tagging mode)"
                 );
             } else {
                 $result->assert(
                     true,
-                    "{$this->serviceName} version check skipped (intersection mode has no version requirement)"
+                    "{$this->serviceName} version check skipped (all mode has no version requirement)"
                 );
             }
         } catch (Throwable $e) {
@@ -86,19 +86,19 @@ final class RedisVersionCheck implements EnvironmentCheckInterface
             return 'Ensure Redis/Valkey server is running and accessible';
         }
 
-        if ($this->taggingMode !== 'union') {
+        if ($this->taggingMode !== 'any') {
             return null;
         }
 
         if ($this->serviceName === 'Redis' && $this->serviceVersion !== null) {
             if (version_compare($this->serviceVersion, self::REDIS_REQUIRED_VERSION, '<')) {
-                return 'Upgrade to Redis ' . self::REDIS_REQUIRED_VERSION . '+ or Valkey ' . self::VALKEY_REQUIRED_VERSION . '+ for union tagging mode';
+                return 'Upgrade to Redis ' . self::REDIS_REQUIRED_VERSION . '+ or Valkey ' . self::VALKEY_REQUIRED_VERSION . '+ for any tagging mode';
             }
         }
 
         if ($this->serviceName === 'Valkey' && $this->serviceVersion !== null) {
             if (version_compare($this->serviceVersion, self::VALKEY_REQUIRED_VERSION, '<')) {
-                return 'Upgrade to Valkey ' . self::VALKEY_REQUIRED_VERSION . '+ for union tagging mode';
+                return 'Upgrade to Valkey ' . self::VALKEY_REQUIRED_VERSION . '+ for any tagging mode';
             }
         }
 

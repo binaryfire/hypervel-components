@@ -10,7 +10,8 @@ use Hypervel\Cache\Console\Doctor\DoctorContext;
 /**
  * Tests add() operation (only stores if key doesn't exist).
  *
- * This operation is mode-agnostic (works the same in both modes).
+ * Basic add() is mode-agnostic, but retrieval and tag structure verification
+ * differs between modes.
  */
 final class AddOperationsCheck implements CheckInterface
 {
@@ -23,7 +24,7 @@ final class AddOperationsCheck implements CheckInterface
     {
         $result = new CheckResult();
 
-        // Add new key
+        // Add new key (no tags - mode agnostic)
         $addResult = $ctx->cache->add($ctx->prefixed('add:new'), 'first', 60);
         $result->assert(
             $addResult === true && $ctx->cache->get($ctx->prefixed('add:new')) === 'first',
@@ -38,16 +39,53 @@ final class AddOperationsCheck implements CheckInterface
         );
 
         // Add with tags
-        $addResult = $ctx->cache->tags([$ctx->prefixed('unique')])->add($ctx->prefixed('add:tagged'), 'value', 60);
+        $addTag = $ctx->prefixed('unique');
+        $addKey = $ctx->prefixed('add:tagged');
+        $addResult = $ctx->cache->tags([$addTag])->add($addKey, 'value', 60);
         $result->assert(
             $addResult === true,
-            'add() works with tags'
+            'add() with tags succeeds for non-existent key'
         );
 
-        $addResult = $ctx->cache->tags([$ctx->prefixed('unique')])->add($ctx->prefixed('add:tagged'), 'new value', 60);
+        // Verify the value was actually stored and is retrievable
+        if ($ctx->isAnyMode()) {
+            $storedValue = $ctx->cache->get($addKey);
+            $result->assert(
+                $storedValue === 'value',
+                'add() with tags: value retrievable via direct get (any mode)'
+            );
+        } else {
+            $storedValue = $ctx->cache->tags([$addTag])->get($addKey);
+            $result->assert(
+                $storedValue === 'value',
+                'add() with tags: value retrievable via tagged get (all mode)'
+            );
+
+            // Verify ZSET entry exists
+            $tagSetKey = $ctx->tagHashKey($addTag);
+            $entryCount = $ctx->redis->zCard($tagSetKey);
+            $result->assert(
+                $entryCount > 0,
+                'add() with tags: ZSET entry created (all mode)'
+            );
+        }
+
+        // Try to add existing key with tags
+        $addResult = $ctx->cache->tags([$addTag])->add($addKey, 'new value', 60);
         $result->assert(
             $addResult === false,
             'add() with tags fails for existing key'
+        );
+
+        // Verify value unchanged after failed add
+        if ($ctx->isAnyMode()) {
+            $unchangedValue = $ctx->cache->get($addKey);
+        } else {
+            $unchangedValue = $ctx->cache->tags([$addTag])->get($addKey);
+        }
+        $result->assert(
+            $unchangedValue === 'value',
+            'add() with tags: value unchanged after failed add'
         );
 
         return $result;

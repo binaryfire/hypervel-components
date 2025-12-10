@@ -10,7 +10,7 @@ use Hypervel\Cache\Console\Doctor\DoctorContext;
 /**
  * Tests edge cases: null, zero, empty string, special characters, complex data.
  *
- * Most tests are mode-agnostic, but tag hash verification is union mode specific.
+ * Most tests are mode-agnostic, but tag hash verification is any mode specific.
  */
 final class EdgeCasesCheck implements CheckInterface
 {
@@ -45,18 +45,20 @@ final class EdgeCasesCheck implements CheckInterface
         );
 
         // Numeric tags
-        $ctx->cache->tags([$ctx->prefixed('123'), $ctx->prefixed('string-tag')])->put($ctx->prefixed('edge:numeric-tags'), 'value', 60);
+        $numericTags = [$ctx->prefixed('123'), $ctx->prefixed('string-tag')];
+        $numericTagKey = $ctx->prefixed('edge:numeric-tags');
+        $ctx->cache->tags($numericTags)->put($numericTagKey, 'value', 60);
 
-        if ($ctx->isUnionMode()) {
+        if ($ctx->isAnyMode()) {
             $result->assert(
-                $ctx->redis->hexists($ctx->tagHashKey($ctx->prefixed('123')), $ctx->prefixed('edge:numeric-tags')) === true,
-                'Numeric tags are handled (cast to strings, union mode)'
+                $ctx->redis->hexists($ctx->tagHashKey($ctx->prefixed('123')), $numericTagKey) === true,
+                'Numeric tags are handled (cast to strings, any mode)'
             );
         } else {
-            // For intersection mode, verify the key was stored
+            // For all mode, verify the key was stored using tagged get
             $result->assert(
-                $ctx->cache->get($ctx->prefixed('edge:numeric-tags')) === 'value',
-                'Numeric tags are handled (cast to strings, intersection mode)'
+                $ctx->cache->tags($numericTags)->get($numericTagKey) === 'value',
+                'Numeric tags are handled (cast to strings, all mode)'
             );
         }
 
@@ -76,8 +78,15 @@ final class EdgeCasesCheck implements CheckInterface
             'boolean' => true,
             'float' => 3.14159,
         ];
-        $ctx->cache->tags([$ctx->prefixed('complex')])->put($ctx->prefixed('edge:complex'), $complex, 60);
-        $retrieved = $ctx->cache->get($ctx->prefixed('edge:complex'));
+        $complexTag = $ctx->prefixed('complex');
+        $complexKey = $ctx->prefixed('edge:complex');
+        $ctx->cache->tags([$complexTag])->put($complexKey, $complex, 60);
+
+        if ($ctx->isAnyMode()) {
+            $retrieved = $ctx->cache->get($complexKey);
+        } else {
+            $retrieved = $ctx->cache->tags([$complexTag])->get($complexKey);
+        }
         $result->assert(
             is_array($retrieved) && $retrieved['nested']['array'][0] === 1,
             'Complex data structures are serialized and deserialized'

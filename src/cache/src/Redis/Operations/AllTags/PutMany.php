@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Cache\Redis\Operations\AllTags;
 
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Store multiple items in the cache with intersection tag tracking.
+ * Store multiple items in the cache with all tag tracking.
  *
  * Combines the ZADD operations for all keys to all tags with SETEX
  * for each cache value in a single pipeline for efficiency.

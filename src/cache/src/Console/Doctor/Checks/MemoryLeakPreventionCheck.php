@@ -10,8 +10,8 @@ use Hypervel\Cache\Console\Doctor\DoctorContext;
 /**
  * Tests memory leak prevention through tag reference expiration.
  *
- * Union mode: Hash fields auto-expire via HEXPIRE.
- * Intersection mode: Sorted set entries cleaned via ZREMRANGEBYSCORE.
+ * Any mode: Hash fields auto-expire via HEXPIRE.
+ * All mode: Sorted set entries cleaned via ZREMRANGEBYSCORE.
  *
  * Hypervel only supports lazy cleanup mode (orphans cleaned by scheduled command).
  */
@@ -26,16 +26,16 @@ final class MemoryLeakPreventionCheck implements CheckInterface
     {
         $result = new CheckResult();
 
-        if ($ctx->isUnionMode()) {
-            $this->testUnionMode($ctx, $result);
+        if ($ctx->isAnyMode()) {
+            $this->testAnyMode($ctx, $result);
         } else {
-            $this->testIntersectionMode($ctx, $result);
+            $this->testAllMode($ctx, $result);
         }
 
         return $result;
     }
 
-    private function testUnionMode(DoctorContext $ctx, CheckResult $result): void
+    private function testAnyMode(DoctorContext $ctx, CheckResult $result): void
     {
         // Create item with short TTL
         $ctx->cache->tags([$ctx->prefixed('leak-test')])->put($ctx->prefixed('leak:short'), 'value', 3);
@@ -68,14 +68,50 @@ final class MemoryLeakPreventionCheck implements CheckInterface
         );
     }
 
-    private function testIntersectionMode(DoctorContext $ctx, CheckResult $result): void
+    private function testAllMode(DoctorContext $ctx, CheckResult $result): void
     {
-        // TODO: Implement intersection mode memory leak prevention tests
-        // Intersection mode uses sorted sets with TTL as score
-        // ZREMRANGEBYSCORE cleans up expired entries
+        // Create item with future TTL
+        $leakTag = $ctx->prefixed('leak-test');
+        $leakKey = $ctx->prefixed('leak:short');
+        $ctx->cache->tags([$leakTag])->put($leakKey, 'value', 60);
+
+        $tagSetKey = $ctx->tagHashKey($leakTag);
+
+        // Compute the namespaced key using central source of truth
+        $namespacedKey = $ctx->namespacedKey([$leakTag], $leakKey);
+
+        // Verify ZSET entry exists with future timestamp score
+        $score = $ctx->redis->zScore($tagSetKey, $namespacedKey);
         $result->assert(
-            true,
-            'Intersection mode memory leak prevention (placeholder)'
+            $score !== false && $score > time(),
+            'ZSET entry has future timestamp score (will be cleaned when expired)'
+        );
+
+        // Test lazy cleanup after flush
+        $alphaTag = $ctx->prefixed('alpha');
+        $betaTag = $ctx->prefixed('beta');
+        $sharedKey = $ctx->prefixed('leak:shared');
+        $ctx->cache->tags([$alphaTag, $betaTag])->put($sharedKey, 'value', 60);
+
+        // Compute namespaced key for shared item using central source of truth
+        $sharedNamespacedKey = $ctx->namespacedKey([$alphaTag, $betaTag], $sharedKey);
+
+        // Flush one tag
+        $ctx->cache->tags([$alphaTag])->flush();
+
+        // Alpha ZSET should be deleted
+        $alphaSetKey = $ctx->tagHashKey($alphaTag);
+        $result->assert(
+            $ctx->redis->exists($alphaSetKey) === 0,
+            'Flushed tag ZSET is deleted'
+        );
+
+        // All mode uses lazy cleanup - orphaned entry remains in beta ZSET until prune command runs
+        $betaSetKey = $ctx->tagHashKey($betaTag);
+        $orphanScore = $ctx->redis->zScore($betaSetKey, $sharedNamespacedKey);
+        $result->assert(
+            $orphanScore !== false,
+            'Orphaned entry exists in shared tag ZSET (lazy cleanup - will be cleaned by prune command)'
         );
     }
 }

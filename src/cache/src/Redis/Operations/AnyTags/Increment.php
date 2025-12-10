@@ -2,36 +2,36 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\UnionTags;
+namespace Hypervel\Cache\Redis\Operations\AnyTags;
 
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Decrement the value of an item in the cache with tags support.
+ * Increment the value of an item in the cache with tags support.
  *
- * Decrements the numeric value and adds/updates tag entries. If the key
- * doesn't exist, creates it with negative of decrement value (no initial TTL).
+ * Increments the numeric value and adds/updates tag entries. If the key
+ * doesn't exist, creates it with the increment value (no initial TTL).
  *
- * Optimization: Uses Lua script to perform decrement, TTL check, and tag updates
+ * Optimization: Uses Lua script to perform increment, TTL check, and tag updates
  * in a single network round trip (1 RTT).
  */
-class Decrement
+class Increment
 {
     /**
-     * Create a new decrement with tags operation instance.
+     * Create a new increment with tags operation instance.
      */
     public function __construct(
         private readonly StoreContext $context,
     ) {}
 
     /**
-     * Execute the decrement operation.
+     * Execute the increment operation.
      *
      * @param string $key The cache key (without prefix)
-     * @param int $value The amount to decrement by
+     * @param int $value The amount to increment by
      * @param array<int, string|int> $tags Array of tag names (will be cast to strings)
-     * @return int|false The new value after decrementing, or false on failure
+     * @return int|false The new value after incrementing, or false on failure
      */
     public function execute(string $key, int $value, array $tags): int|bool
     {
@@ -53,9 +53,9 @@ class Decrement
             $client = $conn->client();
             $prefix = $this->context->prefix();
 
-            // 1. Decrement and Get TTL (Same slot, so we can use multi)
+            // 1. Increment and Get TTL (Same slot, so we can use multi)
             $multi = $client->multi();
-            $multi->decrBy($prefix . $key, $value);
+            $multi->incrBy($prefix . $key, $value);
             $multi->ttl($prefix . $key);
             [$newValue, $ttl] = $multi->exec();
 
@@ -134,8 +134,8 @@ class Decrement
                 local rawKey = ARGV[5]
                 local tagHashSuffix = ARGV[6]
 
-                -- 1. Decrement
-                local newValue = redis.call('DECRBY', key, val)
+                -- 1. Increment
+                local newValue = redis.call('INCRBY', key, val)
 
                 -- 2. Get TTL
                 local ttl = redis.call('TTL', key)
@@ -172,10 +172,11 @@ class Decrement
                     end
                 end
 
-                -- 6. Update Tag Hashes
+                -- 6. Add to New Tags
                 for _, tag in ipairs(newTagsList) do
                     local tagHash = tagPrefix .. tag .. tagHashSuffix
                     if ttl > 0 then
+                        -- Use HSETEX for atomic field creation and expiration
                         redis.call('HSETEX', tagHash, 'EX', ttl, 'FIELDS', 1, rawKey, '1')
                     else
                         redis.call('HSET', tagHash, rawKey, '1')

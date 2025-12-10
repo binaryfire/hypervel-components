@@ -10,18 +10,18 @@ use Hypervel\Cache\RedisStore;
 use Hypervel\Cache\TagSet;
 
 /**
- * Union-based tag set for Redis 8.0+ enhanced tagging.
+ * Any-mode tag set for Redis 8.0+ enhanced tagging.
  *
- * Key differences from IntersectionTagSet:
+ * Key differences from AllTagSet:
  * - Tag IDs are just the tag names (no random UUID versioning)
  * - Uses hashes with HSETEX for automatic field expiration
- * - Tags track which keys belong to them (for union flush semantics)
- * - Flush affects items with ANY of the specified tags (union), not ALL (intersection)
+ * - Tags track which keys belong to them (for any flush semantics)
+ * - Flush affects items with ANY of the specified tags (any), not ALL (all)
  *
  * This class is intentionally simple - it delegates most work to RedisStore
  * and the tagged operation classes in Redis/Operations/.
  */
-class UnionTagSet extends TagSet
+class AnyTagSet extends TagSet
 {
     /**
      * The cache store implementation.
@@ -31,7 +31,7 @@ class UnionTagSet extends TagSet
     protected Store $store;
 
     /**
-     * Create a new UnionTagSet instance.
+     * Create a new AnyTagSet instance.
      */
     public function __construct(RedisStore $store, array $names = [])
     {
@@ -41,7 +41,7 @@ class UnionTagSet extends TagSet
     /**
      * Get the unique tag identifier for a given tag.
      *
-     * Unlike IntersectionTagSet which uses random UUIDs, union mode
+     * Unlike AllTagSet which uses random UUIDs, any mode
      * uses the tag name directly. This means tags don't get "versioned"
      * on flush - actual cache keys are deleted instead.
      */
@@ -61,7 +61,8 @@ class UnionTagSet extends TagSet
     /**
      * Get the hash key for a tag.
      *
-     * Format: {prefix}_erc:tag:{tag}:entries
+     * Delegates to StoreContext which delegates to TagMode (single source of truth).
+     * Format: "{prefix}_any:tag:{tag}:entries"
      */
     public function tagHashKey(string $name): string
     {
@@ -79,7 +80,7 @@ class UnionTagSet extends TagSet
         $seen = [];
 
         foreach ($this->names as $name) {
-            foreach ($this->getRedisStore()->unionTagOps()->getTaggedKeys()->execute($name) as $key) {
+            foreach ($this->getRedisStore()->anyTagOps()->getTaggedKeys()->execute($name) as $key) {
                 if (! isset($seen[$key])) {
                     $seen[$key] = true;
                     yield $key;
@@ -91,8 +92,8 @@ class UnionTagSet extends TagSet
     /**
      * Reset the tag set.
      *
-     * In union mode, this actually deletes the cached items,
-     * unlike intersection mode which just changes the tag version.
+     * In any mode, this actually deletes the cached items,
+     * unlike all mode which just changes the tag version.
      */
     public function reset(): void
     {
@@ -107,7 +108,7 @@ class UnionTagSet extends TagSet
      */
     public function flush(): void
     {
-        $this->getRedisStore()->unionTagOps()->flush()->execute($this->names);
+        $this->getRedisStore()->anyTagOps()->flush()->execute($this->names);
     }
 
     /**
@@ -115,7 +116,7 @@ class UnionTagSet extends TagSet
      */
     public function flushTag(string $name): string
     {
-        $this->getRedisStore()->unionTagOps()->flush()->execute([$name]);
+        $this->getRedisStore()->anyTagOps()->flush()->execute([$name]);
 
         return $this->tagKey($name);
     }
@@ -123,7 +124,7 @@ class UnionTagSet extends TagSet
     /**
      * Get a unique namespace that changes when any of the tags are flushed.
      *
-     * Not used in union mode since we don't namespace keys by tags.
+     * Not used in any mode since we don't namespace keys by tags.
      * Returns empty string for compatibility with TaggedCache.
      */
     public function getNamespace(): string
@@ -134,8 +135,8 @@ class UnionTagSet extends TagSet
     /**
      * Reset the tag and return the new tag identifier.
      *
-     * In union mode, this flushes the tag and returns the tag name.
-     * The tag name never changes (unlike intersection mode's UUIDs).
+     * In any mode, this flushes the tag and returns the tag name.
+     * The tag name never changes (unlike all mode's UUIDs).
      */
     public function resetTag(string $name): string
     {

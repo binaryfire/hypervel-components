@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Cache\Redis\Operations\AllTags;
 
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Adds a cache key reference to intersection tag sorted sets.
+ * Adds a cache key reference to all tag sorted sets.
  *
  * Each tag maintains a sorted set where:
  * - Members are cache keys
@@ -32,7 +32,7 @@ class AddEntry
      *
      * @param string $key The cache key (without prefix)
      * @param int $ttl TTL in seconds (0 means forever, stored as -1 score)
-     * @param array<string> $tagIds Array of tag identifiers (e.g., "tag:users:entries")
+     * @param array<string> $tagIds Array of tag identifiers (e.g., "_all:tag:users:entries")
      * @param string|null $updateWhen Optional ZADD flag: 'NX' (only add new), 'XX' (only update existing), 'GT'/'LT'
      */
     public function execute(string $key, int $ttl, array $tagIds, ?string $updateWhen = null): void

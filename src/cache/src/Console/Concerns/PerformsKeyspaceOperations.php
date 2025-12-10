@@ -42,9 +42,9 @@ trait PerformsKeyspaceOperations
      * Example:
      * ```php
      * // Delete all doctor test keys
-     * $this->flushKeysByPattern($store, $store->getPrefix() . '_erc:doctor:*');
-     * // With prefix "cache:", this matches "cache:_erc:doctor:*"
-     * // If OPT_PREFIX is "myapp:", actual Redis keys are "myapp:cache:_erc:doctor:*"
+     * $this->flushKeysByPattern($store, $store->getPrefix() . '_doctor:test:*');
+     * // With prefix "cache:", this matches "cache:_doctor:test:*"
+     * // If OPT_PREFIX is "myapp:", actual Redis keys are "myapp:cache:_doctor:test:*"
      * ```
      *
      * @param RedisStore $store The cache store instance

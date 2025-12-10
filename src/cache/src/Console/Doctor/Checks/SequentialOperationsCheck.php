@@ -24,12 +24,19 @@ final class SequentialOperationsCheck implements CheckInterface
         $result = new CheckResult();
 
         // Rapid writes to same key
+        $rapidTag = $ctx->prefixed('rapid');
+        $rapidKey = $ctx->prefixed('concurrent:key');
         for ($i = 0; $i < 10; $i++) {
-            $ctx->cache->tags([$ctx->prefixed('rapid')])->put($ctx->prefixed('concurrent:key'), "value{$i}", 60);
+            $ctx->cache->tags([$rapidTag])->put($rapidKey, "value{$i}", 60);
         }
 
+        if ($ctx->isAnyMode()) {
+            $rapidValue = $ctx->cache->get($rapidKey);
+        } else {
+            $rapidValue = $ctx->cache->tags([$rapidTag])->get($rapidKey);
+        }
         $result->assert(
-            $ctx->cache->get($ctx->prefixed('concurrent:key')) === 'value9',
+            $rapidValue === 'value9',
             'Last write wins in rapid succession'
         );
 
@@ -59,10 +66,18 @@ final class SequentialOperationsCheck implements CheckInterface
         );
 
         // Overlapping tag operations
-        $ctx->cache->tags([$ctx->prefixed('overlap1'), $ctx->prefixed('overlap2')])->put($ctx->prefixed('concurrent:overlap'), 'value', 60);
+        $overlapTags = [$ctx->prefixed('overlap1'), $ctx->prefixed('overlap2')];
+        $overlapKey = $ctx->prefixed('concurrent:overlap');
+        $ctx->cache->tags($overlapTags)->put($overlapKey, 'value', 60);
         $ctx->cache->tags([$ctx->prefixed('overlap1')])->flush();
+
+        if ($ctx->isAnyMode()) {
+            $overlapValue = $ctx->cache->get($overlapKey);
+        } else {
+            $overlapValue = $ctx->cache->tags($overlapTags)->get($overlapKey);
+        }
         $result->assert(
-            $ctx->cache->get($ctx->prefixed('concurrent:overlap')) === null,
+            $overlapValue === null,
             'Partial flush removes item correctly'
         );
 

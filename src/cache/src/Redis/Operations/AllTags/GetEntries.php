@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Cache\Redis\Operations\AllTags;
 
 use Hyperf\Collection\LazyCollection;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Retrieves all cache key entries from intersection tag sorted sets.
+ * Retrieves all cache key entries from all tag sorted sets.
  *
  * Uses ZSCAN for efficient cursor-based iteration over potentially large
  * sorted sets. Each tag's entries are collected within a single connection
@@ -24,7 +24,7 @@ class GetEntries
     /**
      * Get all cache key entries across the given tag sorted sets.
      *
-     * @param array<string> $tagIds Array of tag identifiers (e.g., "tag:users:entries")
+     * @param array<string> $tagIds Array of tag identifiers (e.g., "_all:tag:users:entries")
      * @return LazyCollection<int, string> Lazy collection yielding cache keys (without prefix)
      */
     public function execute(array $tagIds): LazyCollection

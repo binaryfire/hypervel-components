@@ -10,7 +10,7 @@ use Hypervel\Cache\Console\Doctor\DoctorContext;
 /**
  * Verifies Redis hash structures are created correctly.
  *
- * This check is union mode only (intersection mode uses sorted sets instead).
+ * This check is any mode only (all mode uses sorted sets instead).
  */
 final class HashStructuresCheck implements CheckInterface
 {
@@ -23,10 +23,10 @@ final class HashStructuresCheck implements CheckInterface
     {
         $result = new CheckResult();
 
-        if ($ctx->isIntersectionMode()) {
+        if ($ctx->isAllMode()) {
             $result->assert(
                 true,
-                'Hash structures check skipped (intersection mode uses sorted sets)'
+                'Hash structures check skipped (all mode uses sorted sets)'
             );
 
             return $result;

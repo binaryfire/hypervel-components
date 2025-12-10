@@ -9,7 +9,7 @@ use Hypervel\Cache\Contracts\Store;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Cache\TagSet;
 
-class IntersectionTagSet extends TagSet
+class AllTagSet extends TagSet
 {
     /**
      * The cache store implementation.
@@ -23,7 +23,7 @@ class IntersectionTagSet extends TagSet
      */
     public function addEntry(string $key, int $ttl = 0, ?string $updateWhen = null): void
     {
-        $this->store->intersectionTagOps()->addEntry()->execute($key, $ttl, $this->tagIds(), $updateWhen);
+        $this->store->allTagOps()->addEntry()->execute($key, $ttl, $this->tagIds(), $updateWhen);
     }
 
     /**
@@ -31,7 +31,7 @@ class IntersectionTagSet extends TagSet
      */
     public function entries(): LazyCollection
     {
-        return $this->store->intersectionTagOps()->getEntries()->execute($this->tagIds());
+        return $this->store->allTagOps()->getEntries()->execute($this->tagIds());
     }
 
     /**
@@ -39,7 +39,7 @@ class IntersectionTagSet extends TagSet
      */
     public function flushStaleEntries(): void
     {
-        $this->store->intersectionTagOps()->flushStaleEntries()->execute($this->tagIds());
+        $this->store->allTagOps()->flushStaleEntries()->execute($this->tagIds());
     }
 
     /**
@@ -62,18 +62,24 @@ class IntersectionTagSet extends TagSet
 
     /**
      * Get the unique tag identifier for a given tag.
+     *
+     * Delegates to StoreContext which delegates to TagMode (single source of truth).
+     * Format: "_all:tag:{name}:entries"
      */
     public function tagId(string $name): string
     {
-        return "tag:{$name}:entries";
+        return $this->store->getContext()->tagId($name);
     }
 
     /**
      * Get the tag identifier key for a given tag.
+     *
+     * Same as tagId() - the identifier without cache prefix.
+     * Used with store->forget() which adds the prefix.
      */
     public function tagKey(string $name): string
     {
-        return "tag:{$name}:entries";
+        return $this->store->getContext()->tagId($name);
     }
 
     /**

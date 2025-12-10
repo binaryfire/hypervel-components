@@ -12,8 +12,8 @@ use Hypervel\Cache\Console\Doctor\DoctorContext;
  * Tests tagged cache operations: tagged put, get, flush.
  *
  * Behavior differs between tagging modes:
- * - Union mode: get() on tagged cache throws BadMethodCallException
- * - Intersection mode: get() on tagged cache works normally
+ * - Any mode: get() on tagged cache throws BadMethodCallException
+ * - All mode: get() on tagged cache works normally
  */
 final class TaggedOperationsCheck implements CheckInterface
 {
@@ -27,64 +27,85 @@ final class TaggedOperationsCheck implements CheckInterface
         $result = new CheckResult();
 
         // Single tag put
-        $ctx->cache->tags([$ctx->prefixed('products')])->put($ctx->prefixed('tag:product1'), 'Product 1', 60);
-        $result->assert(
-            $ctx->cache->get($ctx->prefixed('tag:product1')) === 'Product 1',
-            'Tagged item can be retrieved without tags (direct get)'
-        );
+        $tag = $ctx->prefixed('products');
+        $key = $ctx->prefixed('tag:product1');
+        $ctx->cache->tags([$tag])->put($key, 'Product 1', 60);
 
-        if ($ctx->isUnionMode()) {
-            $this->testUnionMode($ctx, $result);
+        if ($ctx->isAnyMode()) {
+            // Any mode: key is stored without namespace modification
+            // Can be retrieved directly without tags
+            $result->assert(
+                $ctx->cache->get($key) === 'Product 1',
+                'Tagged item can be retrieved without tags (direct get)'
+            );
+            $this->testAnyMode($ctx, $result, $tag, $key);
         } else {
-            $this->testIntersectionMode($ctx, $result);
+            // All mode: key is namespaced with sha1 of tags
+            // Direct get without tags will NOT find the item
+            $result->assert(
+                $ctx->cache->get($key) === null,
+                'Tagged item NOT retrievable without tags (namespace differs)'
+            );
+            $this->testAllMode($ctx, $result, $tag, $key);
         }
 
         // Tag flush (common to both modes)
-        $ctx->cache->tags([$ctx->prefixed('products')])->flush();
-        $result->assert(
-            $ctx->cache->get($ctx->prefixed('tag:product1')) === null,
-            'flush() removes tagged items'
-        );
+        $ctx->cache->tags([$tag])->flush();
+
+        if ($ctx->isAnyMode()) {
+            $result->assert(
+                $ctx->cache->get($key) === null,
+                'flush() removes tagged items'
+            );
+        } else {
+            // In all mode, use tagged get to verify flush worked
+            $result->assert(
+                $ctx->cache->tags([$tag])->get($key) === null,
+                'flush() removes tagged items'
+            );
+        }
 
         return $result;
     }
 
-    private function testUnionMode(DoctorContext $ctx, CheckResult $result): void
+    private function testAnyMode(DoctorContext $ctx, CheckResult $result, string $tag, string $key): void
     {
         // Verify hash structure exists
-        $tagKey = $ctx->tagHashKey($ctx->prefixed('products'));
+        $tagKey = $ctx->tagHashKey($tag);
         $result->assert(
-            $ctx->redis->hexists($tagKey, $ctx->prefixed('tag:product1')) === true,
-            'Tag hash contains the cache key (union mode)'
+            $ctx->redis->hexists($tagKey, $key) === true,
+            'Tag hash contains the cache key (any mode)'
         );
 
         // Verify get() on tagged cache throws
         $threw = false;
         try {
-            $ctx->cache->tags([$ctx->prefixed('products')])->get($ctx->prefixed('tag:product1'));
+            $ctx->cache->tags([$tag])->get($key);
         } catch (BadMethodCallException) {
             $threw = true;
         }
         $result->assert(
             $threw,
-            'Tagged get() throws BadMethodCallException (union mode)'
+            'Tagged get() throws BadMethodCallException (any mode)'
         );
     }
 
-    private function testIntersectionMode(DoctorContext $ctx, CheckResult $result): void
+    private function testAllMode(DoctorContext $ctx, CheckResult $result, string $tag, string $key): void
     {
-        // In intersection mode, get() on tagged cache works
-        $value = $ctx->cache->tags([$ctx->prefixed('products')])->get($ctx->prefixed('tag:product1'));
+        // In all mode, get() on tagged cache works
+        $value = $ctx->cache->tags([$tag])->get($key);
         $result->assert(
             $value === 'Product 1',
-            'Tagged get() returns value (intersection mode)'
+            'Tagged get() returns value (all mode)'
         );
 
-        // TODO: Add intersection mode specific structure checks
-        // Intersection mode uses sorted sets, not hashes
+        // Verify tag sorted set structure exists
+        // Tag key format: {prefix}tag:{tagName}:entries
+        $tagSetKey = $ctx->tagHashKey($tag);
+        $members = $ctx->redis->zRange($tagSetKey, 0, -1);
         $result->assert(
-            true,
-            'Intersection mode tag structure check (placeholder)'
+            is_array($members) && count($members) > 0,
+            'Tag ZSET contains entries (all mode)'
         );
     }
 }

@@ -10,7 +10,7 @@ use Hypervel\Cache\Console\Doctor\DoctorContext;
 /**
  * Tests bulk operations: putMany() and many().
  *
- * Basic operations are mode-agnostic, but tag hash verification is union mode specific.
+ * Basic operations are mode-agnostic, but tag hash verification is any mode specific.
  */
 final class BulkOperationsCheck implements CheckInterface
 {
@@ -51,32 +51,46 @@ final class BulkOperationsCheck implements CheckInterface
         );
 
         // putMany with tags
-        $ctx->cache->tags([$ctx->prefixed('bulk')])->putMany([
-            $ctx->prefixed('bulk:tagged1') => 'tagged1',
-            $ctx->prefixed('bulk:tagged2') => 'tagged2',
+        $bulkTag = $ctx->prefixed('bulk');
+        $taggedKey1 = $ctx->prefixed('bulk:tagged1');
+        $taggedKey2 = $ctx->prefixed('bulk:tagged2');
+
+        $ctx->cache->tags([$bulkTag])->putMany([
+            $taggedKey1 => 'tagged1',
+            $taggedKey2 => 'tagged2',
         ], 60);
 
-        if ($ctx->isUnionMode()) {
+        if ($ctx->isAnyMode()) {
             $result->assert(
-                $ctx->redis->hexists($ctx->tagHashKey($ctx->prefixed('bulk')), $ctx->prefixed('bulk:tagged1')) === true
-                && $ctx->redis->hexists($ctx->tagHashKey($ctx->prefixed('bulk')), $ctx->prefixed('bulk:tagged2')) === true,
-                'putMany() with tags adds all items to tag hash (union mode)'
+                $ctx->redis->hexists($ctx->tagHashKey($bulkTag), $taggedKey1) === true
+                && $ctx->redis->hexists($ctx->tagHashKey($bulkTag), $taggedKey2) === true,
+                'putMany() with tags adds all items to tag hash (any mode)'
             );
         } else {
-            // TODO: Verify intersection mode sorted set entries
+            // Verify all mode sorted set contains entries
+            $tagSetKey = $ctx->tagHashKey($bulkTag);
+            $entryCount = $ctx->redis->zCard($tagSetKey);
             $result->assert(
-                true,
-                'putMany() with tags adds entries (intersection mode - placeholder)'
+                $entryCount >= 2,
+                'putMany() with tags adds entries to tag ZSET (all mode)'
             );
         }
 
         // Flush putMany tags
-        $ctx->cache->tags([$ctx->prefixed('bulk')])->flush();
-        $result->assert(
-            $ctx->cache->get($ctx->prefixed('bulk:tagged1')) === null
-            && $ctx->cache->get($ctx->prefixed('bulk:tagged2')) === null,
-            'flush() removes items added via putMany()'
-        );
+        $ctx->cache->tags([$bulkTag])->flush();
+
+        if ($ctx->isAnyMode()) {
+            $result->assert(
+                $ctx->cache->get($taggedKey1) === null && $ctx->cache->get($taggedKey2) === null,
+                'flush() removes items added via putMany()'
+            );
+        } else {
+            $result->assert(
+                $ctx->cache->tags([$bulkTag])->get($taggedKey1) === null
+                && $ctx->cache->tags([$bulkTag])->get($taggedKey2) === null,
+                'flush() removes items added via putMany()'
+            );
+        }
 
         return $result;
     }

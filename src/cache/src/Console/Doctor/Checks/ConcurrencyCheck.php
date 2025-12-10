@@ -94,7 +94,7 @@ final class ConcurrencyCheck implements CheckInterface
                 fn () => $ctx->cache->tags([$tag2])->flush(),
             ]);
 
-            if ($ctx->isUnionMode()) {
+            if ($ctx->isAnyMode()) {
                 // Verify no orphans in either tag hash
                 $tag1Key = $ctx->tagHashKey($tag1);
                 $tag2Key = $ctx->tagHashKey($tag2);
@@ -104,10 +104,13 @@ final class ConcurrencyCheck implements CheckInterface
                     'Concurrent flush - no orphaned tag hashes'
                 );
             } else {
-                // Intersection mode verification
+                // All mode: verify both tag ZSETs are deleted
+                $tag1SetKey = $ctx->tagHashKey($tag1);
+                $tag2SetKey = $ctx->tagHashKey($tag2);
+
                 $result->assert(
-                    true,
-                    'Concurrent flush completed (intersection mode)'
+                    $ctx->redis->exists($tag1SetKey) === 0 && $ctx->redis->exists($tag2SetKey) === 0,
+                    'Concurrent flush - both tag ZSETs deleted (all mode)'
                 );
             }
         } catch (Throwable $e) {

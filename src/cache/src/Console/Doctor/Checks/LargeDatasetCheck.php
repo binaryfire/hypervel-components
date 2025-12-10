@@ -25,30 +25,48 @@ final class LargeDatasetCheck implements CheckInterface
     {
         $result = new CheckResult();
         $count = self::ITEM_COUNT;
+        $tag = $ctx->prefixed('large-set');
 
         // Bulk insert
         $startTime = microtime(true);
 
         for ($i = 0; $i < $count; $i++) {
-            $ctx->cache->tags([$ctx->prefixed('large-set')])->put($ctx->prefixed("large:item{$i}"), "value{$i}", 60);
+            $ctx->cache->tags([$tag])->put($ctx->prefixed("large:item{$i}"), "value{$i}", 60);
         }
 
         $insertTime = microtime(true) - $startTime;
 
+        $firstKey = $ctx->prefixed('large:item0');
+        $lastKey = $ctx->prefixed('large:item' . ($count - 1));
+
+        if ($ctx->isAnyMode()) {
+            $firstValue = $ctx->cache->get($firstKey);
+            $lastValue = $ctx->cache->get($lastKey);
+        } else {
+            $firstValue = $ctx->cache->tags([$tag])->get($firstKey);
+            $lastValue = $ctx->cache->tags([$tag])->get($lastKey);
+        }
+
         $result->assert(
-            $ctx->cache->get($ctx->prefixed('large:item0')) === 'value0'
-            && $ctx->cache->get($ctx->prefixed('large:item' . ($count - 1))) === 'value' . ($count - 1),
+            $firstValue === 'value0' && $lastValue === 'value' . ($count - 1),
             "Inserted {$count} items (took " . number_format($insertTime, 2) . 's)'
         );
 
         // Bulk flush
         $startTime = microtime(true);
-        $ctx->cache->tags([$ctx->prefixed('large-set')])->flush();
+        $ctx->cache->tags([$tag])->flush();
         $flushTime = microtime(true) - $startTime;
 
+        if ($ctx->isAnyMode()) {
+            $firstAfterFlush = $ctx->cache->get($firstKey);
+            $lastAfterFlush = $ctx->cache->get($lastKey);
+        } else {
+            $firstAfterFlush = $ctx->cache->tags([$tag])->get($firstKey);
+            $lastAfterFlush = $ctx->cache->tags([$tag])->get($lastKey);
+        }
+
         $result->assert(
-            $ctx->cache->get($ctx->prefixed('large:item0')) === null
-            && $ctx->cache->get($ctx->prefixed('large:item' . ($count - 1))) === null,
+            $firstAfterFlush === null && $lastAfterFlush === null,
             "Flushed {$count} items (took " . number_format($flushTime, 2) . 's)'
         );
 

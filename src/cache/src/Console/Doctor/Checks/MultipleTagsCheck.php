@@ -11,8 +11,8 @@ use Hypervel\Cache\Console\Doctor\DoctorContext;
  * Tests operations with multiple tags.
  *
  * Flush behavior differs between modes:
- * - Union mode: Flushing ANY tag removes the item
- * - Intersection mode: Flushing requires ALL tags to match
+ * - Any mode: Flushing ANY tag removes the item
+ * - All mode: Flushing requires ALL tags to match
  */
 final class MultipleTagsCheck implements CheckInterface
 {
@@ -25,70 +25,103 @@ final class MultipleTagsCheck implements CheckInterface
     {
         $result = new CheckResult();
 
-        // Store with multiple tags
-        $ctx->cache->tags([
+        $tags = [
             $ctx->prefixed('posts'),
             $ctx->prefixed('featured'),
             $ctx->prefixed('user:123'),
-        ])->put($ctx->prefixed('multi:post1'), 'Featured Post', 60);
+        ];
+        $key = $ctx->prefixed('multi:post1');
+
+        // Store with multiple tags
+        $ctx->cache->tags($tags)->put($key, 'Featured Post', 60);
 
         // Verify item was stored
-        $result->assert(
-            $ctx->cache->get($ctx->prefixed('multi:post1')) === 'Featured Post',
-            'Item with multiple tags is stored'
-        );
-
-        if ($ctx->isUnionMode()) {
-            $this->testUnionMode($ctx, $result);
+        if ($ctx->isAnyMode()) {
+            // Any mode: direct get works
+            $result->assert(
+                $ctx->cache->get($key) === 'Featured Post',
+                'Item with multiple tags is stored'
+            );
+            $this->testAnyMode($ctx, $result, $tags, $key);
         } else {
-            $this->testIntersectionMode($ctx, $result);
+            // All mode: must use tagged get
+            $result->assert(
+                $ctx->cache->tags($tags)->get($key) === 'Featured Post',
+                'Item with multiple tags is stored'
+            );
+            $this->testAllMode($ctx, $result, $tags, $key);
         }
 
         return $result;
     }
 
-    private function testUnionMode(DoctorContext $ctx, CheckResult $result): void
+    /**
+     * @param array<string> $tags
+     */
+    private function testAnyMode(DoctorContext $ctx, CheckResult $result, array $tags, string $key): void
     {
         // Verify in all tag hashes
         $result->assert(
-            $ctx->redis->hexists($ctx->tagHashKey($ctx->prefixed('posts')), $ctx->prefixed('multi:post1')) === true
-            && $ctx->redis->hexists($ctx->tagHashKey($ctx->prefixed('featured')), $ctx->prefixed('multi:post1')) === true
-            && $ctx->redis->hexists($ctx->tagHashKey($ctx->prefixed('user:123')), $ctx->prefixed('multi:post1')) === true,
-            'Item appears in all tag hashes (union mode)'
+            $ctx->redis->hexists($ctx->tagHashKey($tags[0]), $key) === true
+            && $ctx->redis->hexists($ctx->tagHashKey($tags[1]), $key) === true
+            && $ctx->redis->hexists($ctx->tagHashKey($tags[2]), $key) === true,
+            'Item appears in all tag hashes (any mode)'
         );
 
-        // Flush by one tag (union behavior - removes item)
-        $ctx->cache->tags([$ctx->prefixed('featured')])->flush();
+        // Flush by one tag (any behavior - removes item)
+        $ctx->cache->tags([$tags[1]])->flush();
 
         $result->assert(
-            $ctx->cache->get($ctx->prefixed('multi:post1')) === null,
-            'Flushing ANY tag removes the item (union behavior)'
+            $ctx->cache->get($key) === null,
+            'Flushing ANY tag removes the item (any behavior)'
         );
 
         $result->assert(
-            $ctx->redis->exists($ctx->tagHashKey($ctx->prefixed('featured'))) === 0,
-            'Flushed tag hash is deleted (union mode)'
+            $ctx->redis->exists($ctx->tagHashKey($tags[1])) === 0,
+            'Flushed tag hash is deleted (any mode)'
         );
     }
 
-    private function testIntersectionMode(DoctorContext $ctx, CheckResult $result): void
+    /**
+     * @param array<string> $tags
+     */
+    private function testAllMode(DoctorContext $ctx, CheckResult $result, array $tags, string $key): void
     {
-        // TODO: Implement intersection mode structure verification
-        // Intersection mode uses sorted sets with tag:*:entries pattern
+        // Verify all tag ZSETs contain an entry
+        $postsTagKey = $ctx->tagHashKey($tags[0]);
+        $featuredTagKey = $ctx->tagHashKey($tags[1]);
+        $userTagKey = $ctx->tagHashKey($tags[2]);
 
-        // Flush by one tag - in intersection mode, this removes items that have that tag
-        $ctx->cache->tags([$ctx->prefixed('featured')])->flush();
+        $postsCount = $ctx->redis->zCard($postsTagKey);
+        $featuredCount = $ctx->redis->zCard($featuredTagKey);
+        $userCount = $ctx->redis->zCard($userTagKey);
 
         $result->assert(
-            $ctx->cache->get($ctx->prefixed('multi:post1')) === null,
-            'Flushing tag removes items with that tag (intersection mode)'
+            $postsCount > 0 && $featuredCount > 0 && $userCount > 0,
+            'Item appears in all tag ZSETs (all mode)'
         );
 
-        // Note: In intersection mode, flush(['a', 'b']) only removes items with BOTH tags
-        // But flush(['a']) removes all items with tag 'a'
+        // Flush by one tag - in all mode, this removes items tracked in that tag's ZSET
+        $ctx->cache->tags([$tags[1]])->flush();
+
         $result->assert(
-            true,
-            'Intersection mode multi-tag structure check (placeholder)'
+            $ctx->cache->tags($tags)->get($key) === null,
+            'Flushing tag removes items with that tag (all mode)'
+        );
+
+        // Test tag order matters in all mode
+        $orderKey = $ctx->prefixed('multi:order-test');
+        $ctx->cache->tags([$ctx->prefixed('alpha'), $ctx->prefixed('beta')])->put($orderKey, 'ordered', 60);
+
+        // Same order should retrieve
+        $sameOrder = $ctx->cache->tags([$ctx->prefixed('alpha'), $ctx->prefixed('beta')])->get($orderKey);
+
+        // Different order creates different namespace - should NOT retrieve
+        $diffOrder = $ctx->cache->tags([$ctx->prefixed('beta'), $ctx->prefixed('alpha')])->get($orderKey);
+
+        $result->assert(
+            $sameOrder === 'ordered' && $diffOrder === null,
+            'Tag order matters - different order creates different namespace'
         );
     }
 }

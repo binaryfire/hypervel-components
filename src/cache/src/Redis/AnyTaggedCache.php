@@ -17,15 +17,15 @@ use Hypervel\Cache\RedisStore;
 use Hypervel\Cache\TaggedCache;
 
 /**
- * Union-based tagged cache for Redis 8.0+ enhanced tagging.
+ * Any-mode tagged cache for Redis 8.0+ enhanced tagging.
  *
- * Key differences from IntersectionTaggedCache:
+ * Key differences from AllTaggedCache:
  * - Tags are for WRITING and FLUSHING only, not for scoped reads
  * - get() throws exception - use Cache::get() directly
- * - flush() deletes items with ANY of the specified tags (union semantics)
+ * - flush() deletes items with ANY of the specified tags (any semantics)
  * - Uses HSETEX for automatic hash field expiration
  */
-class UnionTaggedCache extends TaggedCache
+class AnyTaggedCache extends TaggedCache
 {
     /**
      * The cache store implementation.
@@ -37,18 +37,18 @@ class UnionTaggedCache extends TaggedCache
     /**
      * The tag set instance.
      */
-    protected UnionTagSet $unionTags;
+    protected AnyTagSet $anyTags;
 
     /**
      * Create a new tagged cache instance.
      */
     public function __construct(
         RedisStore $store,
-        UnionTagSet $tags,
+        AnyTagSet $tags,
     ) {
         parent::__construct($store, $tags);
 
-        $this->unionTags = $tags;
+        $this->anyTags = $tags;
     }
 
     /**
@@ -59,7 +59,7 @@ class UnionTaggedCache extends TaggedCache
     public function get(array|string $key, mixed $default = null): mixed
     {
         throw new BadMethodCallException(
-            'Cannot get items via tags in union mode. Tags are for writing and flushing only. ' .
+            'Cannot get items via tags in any mode. Tags are for writing and flushing only. ' .
             'Use Cache::get() directly with the full key.'
         );
     }
@@ -72,7 +72,7 @@ class UnionTaggedCache extends TaggedCache
     public function many(array $keys): array
     {
         throw new BadMethodCallException(
-            'Cannot get items via tags in union mode. Tags are for writing and flushing only. ' .
+            'Cannot get items via tags in any mode. Tags are for writing and flushing only. ' .
             'Use Cache::many() directly with the full keys.'
         );
     }
@@ -85,7 +85,7 @@ class UnionTaggedCache extends TaggedCache
     public function has(array|string $key): bool
     {
         throw new BadMethodCallException(
-            'Cannot check existence via tags in union mode. Tags are for writing and flushing only. ' .
+            'Cannot check existence via tags in any mode. Tags are for writing and flushing only. ' .
             'Use Cache::has() directly with the full key.'
         );
     }
@@ -98,7 +98,7 @@ class UnionTaggedCache extends TaggedCache
     public function pull(string $key, mixed $default = null): mixed
     {
         throw new BadMethodCallException(
-            'Cannot pull items via tags in union mode. Tags are for writing and flushing only. ' .
+            'Cannot pull items via tags in any mode. Tags are for writing and flushing only. ' .
             'Use Cache::pull() directly with the full key.'
         );
     }
@@ -111,7 +111,7 @@ class UnionTaggedCache extends TaggedCache
     public function forget(string $key): bool
     {
         throw new BadMethodCallException(
-            'Cannot forget items via tags in union mode. Tags are for writing and flushing only. ' .
+            'Cannot forget items via tags in any mode. Tags are for writing and flushing only. ' .
             'Use Cache::forget() directly with the full key, or flush() to remove all tagged items.'
         );
     }
@@ -136,7 +136,7 @@ class UnionTaggedCache extends TaggedCache
             return false;
         }
 
-        $result = $this->store->unionTagOps()->put()->execute($key, $value, $seconds, $this->unionTags->getNames());
+        $result = $this->store->anyTagOps()->put()->execute($key, $value, $seconds, $this->anyTags->getNames());
 
         if ($result) {
             $this->event(new KeyWritten($key, $value, $seconds));
@@ -160,7 +160,7 @@ class UnionTaggedCache extends TaggedCache
             return false;
         }
 
-        $result = $this->store->unionTagOps()->putMany()->execute($values, $seconds, $this->unionTags->getNames());
+        $result = $this->store->anyTagOps()->putMany()->execute($values, $seconds, $this->anyTags->getNames());
 
         if ($result) {
             foreach ($values as $key => $value) {
@@ -187,7 +187,7 @@ class UnionTaggedCache extends TaggedCache
             }
         }
 
-        return $this->store->unionTagOps()->add()->execute($key, $value, $seconds, $this->unionTags->getNames());
+        return $this->store->anyTagOps()->add()->execute($key, $value, $seconds, $this->anyTags->getNames());
     }
 
     /**
@@ -195,7 +195,7 @@ class UnionTaggedCache extends TaggedCache
      */
     public function forever(string $key, mixed $value): bool
     {
-        $result = $this->store->unionTagOps()->forever()->execute($key, $value, $this->unionTags->getNames());
+        $result = $this->store->anyTagOps()->forever()->execute($key, $value, $this->anyTags->getNames());
 
         if ($result) {
             $this->event(new KeyWritten($key, $value));
@@ -209,7 +209,7 @@ class UnionTaggedCache extends TaggedCache
      */
     public function increment(string $key, int $value = 1): bool|int
     {
-        return $this->store->unionTagOps()->increment()->execute($key, $value, $this->unionTags->getNames());
+        return $this->store->anyTagOps()->increment()->execute($key, $value, $this->anyTags->getNames());
     }
 
     /**
@@ -217,7 +217,7 @@ class UnionTaggedCache extends TaggedCache
      */
     public function decrement(string $key, int $value = 1): bool|int
     {
-        return $this->store->unionTagOps()->decrement()->execute($key, $value, $this->unionTags->getNames());
+        return $this->store->anyTagOps()->decrement()->execute($key, $value, $this->anyTags->getNames());
     }
 
     /**
@@ -225,7 +225,7 @@ class UnionTaggedCache extends TaggedCache
      */
     public function flush(): bool
     {
-        $this->unionTags->flush();
+        $this->anyTags->flush();
 
         return true;
     }
@@ -239,7 +239,7 @@ class UnionTaggedCache extends TaggedCache
      */
     public function items(): Generator
     {
-        return $this->store->unionTagOps()->getTagItems()->execute($this->unionTags->getNames());
+        return $this->store->anyTagOps()->getTagItems()->execute($this->anyTags->getNames());
     }
 
     /**
@@ -302,15 +302,15 @@ class UnionTaggedCache extends TaggedCache
     /**
      * Get the tag set instance.
      */
-    public function getUnionTags(): UnionTagSet
+    public function getAnyTags(): AnyTagSet
     {
-        return $this->unionTags;
+        return $this->anyTags;
     }
 
     /**
      * Format the key for a cache item.
      *
-     * In union mode, keys are NOT namespaced by tags.
+     * In any mode, keys are NOT namespaced by tags.
      * Tags are only for invalidation, not for scoping reads.
      */
     protected function itemKey(string $key): string

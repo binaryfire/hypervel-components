@@ -4,28 +4,28 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache\Redis\Operations;
 
-use Hypervel\Cache\Redis\Operations\UnionTags\Add;
-use Hypervel\Cache\Redis\Operations\UnionTags\Decrement;
-use Hypervel\Cache\Redis\Operations\UnionTags\Flush;
-use Hypervel\Cache\Redis\Operations\UnionTags\Forever;
-use Hypervel\Cache\Redis\Operations\UnionTags\GetTaggedKeys;
-use Hypervel\Cache\Redis\Operations\UnionTags\GetTagItems;
-use Hypervel\Cache\Redis\Operations\UnionTags\Increment;
-use Hypervel\Cache\Redis\Operations\UnionTags\Prune;
-use Hypervel\Cache\Redis\Operations\UnionTags\Put;
-use Hypervel\Cache\Redis\Operations\UnionTags\PutMany;
+use Hypervel\Cache\Redis\Operations\AnyTags\Add;
+use Hypervel\Cache\Redis\Operations\AnyTags\Decrement;
+use Hypervel\Cache\Redis\Operations\AnyTags\Flush;
+use Hypervel\Cache\Redis\Operations\AnyTags\Forever;
+use Hypervel\Cache\Redis\Operations\AnyTags\GetTaggedKeys;
+use Hypervel\Cache\Redis\Operations\AnyTags\GetTagItems;
+use Hypervel\Cache\Redis\Operations\AnyTags\Increment;
+use Hypervel\Cache\Redis\Operations\AnyTags\Prune;
+use Hypervel\Cache\Redis\Operations\AnyTags\Put;
+use Hypervel\Cache\Redis\Operations\AnyTags\PutMany;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 
 /**
- * Container for union tag operations.
+ * Container for any-mode tag operations.
  *
- * This class groups all Redis operations related to union-based tagging,
+ * This class groups all Redis operations related to any-mode tagging,
  * providing lazy-loaded, singleton-cached operation instances.
  *
- * Used by UnionTaggedCache and UnionTagSet.
+ * Used by AnyTaggedCache and AnyTagSet.
  */
-class UnionTagOperations
+class AnyTagOperations
 {
     private ?Put $put = null;
 

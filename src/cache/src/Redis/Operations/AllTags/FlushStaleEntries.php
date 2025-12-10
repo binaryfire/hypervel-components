@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Cache\Redis\Operations\AllTags;
 
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Flushes stale entries from intersection tag sorted sets.
+ * Flushes stale entries from all tag sorted sets.
  *
  * Uses ZREMRANGEBYSCORE to remove entries whose TTL timestamps have passed.
  * This is a cleanup operation that should be run periodically to prevent
@@ -31,7 +31,7 @@ class FlushStaleEntries
      * In cluster mode, uses sequential commands since RedisCluster
      * doesn't support pipeline mode and tags may be in different slots.
      *
-     * @param array<string> $tagIds Array of tag identifiers (e.g., "tag:users:entries")
+     * @param array<string> $tagIds Array of tag identifiers (e.g., "_all:tag:users:entries")
      */
     public function execute(array $tagIds): void
     {

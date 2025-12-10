@@ -14,6 +14,7 @@ use Hypervel\Cache\Console\Doctor\Checks\BasicOperationsCheck;
 use Hypervel\Cache\Console\Doctor\Checks\BulkOperationsCheck;
 use Hypervel\Cache\Console\Doctor\Checks\CacheStoreCheck;
 use Hypervel\Cache\Console\Doctor\Checks\CheckInterface;
+use Hypervel\Cache\Console\Doctor\Checks\CleanupVerificationCheck;
 use Hypervel\Cache\Console\Doctor\Checks\ConcurrencyCheck;
 use Hypervel\Cache\Console\Doctor\Checks\EdgeCasesCheck;
 use Hypervel\Cache\Console\Doctor\Checks\EnvironmentCheckInterface;
@@ -49,7 +50,7 @@ class CacheDoctorCommand extends Command
     /**
      * The console command name.
      */
-    protected ?string $name = 'cache:doctor';
+    protected ?string $name = 'cache:redis-doctor';
 
     /**
      * The console command description.
@@ -65,8 +66,9 @@ class CacheDoctorCommand extends Command
 
     /**
      * Unique prefix to prevent collision with production data.
+     * Mode-agnostic - just identifies doctor test data.
      */
-    private const TEST_PREFIX = '_erc:doctor:';
+    private const TEST_PREFIX = '_doctor:test:';
 
     /**
      * Execute the console command.
@@ -97,20 +99,20 @@ class CacheDoctorCommand extends Command
             return self::FAILURE;
         }
 
-        $taggingMode = $store->getTaggingMode();
+        $tagMode = $store->getTagMode()->value;
 
         // Run environment checks (fail fast if requirements not met)
         $this->info('Checking System Requirements...');
         $this->newLine();
 
-        if (! $this->runEnvironmentChecks($storeName, $store, $taggingMode)) {
+        if (! $this->runEnvironmentChecks($storeName, $store, $tagMode)) {
             return self::FAILURE;
         }
 
         $this->info('✓ All requirements met!');
         $this->newLine(2);
 
-        $this->info("Testing cache store: <fg=cyan>{$storeName}</> ({$taggingMode} mode)");
+        $this->info("Testing cache store: <fg=cyan>{$storeName}</> ({$tagMode} mode)");
         $this->newLine();
 
         // Create context for functional checks
@@ -137,6 +139,9 @@ class CacheDoctorCommand extends Command
             $this->cleanup($doctorContext);
         }
 
+        // Run cleanup verification after cleanup
+        $this->runCleanupVerification($doctorContext);
+
         $this->displaySummary();
 
         return $this->testsFailed === 0 ? self::SUCCESS : self::FAILURE;
@@ -147,17 +152,17 @@ class CacheDoctorCommand extends Command
      *
      * @return list<EnvironmentCheckInterface>
      */
-    protected function getEnvironmentChecks(string $storeName, RedisStore $store, string $taggingMode): array
+    protected function getEnvironmentChecks(string $storeName, RedisStore $store, string $tagMode): array
     {
         // Get connection for version checks
         $context = $store->getContext();
         $redis = $context->withConnection(fn (RedisConnection $conn) => $conn);
 
         return [
-            new PhpRedisCheck($taggingMode),
-            new RedisVersionCheck($redis, $taggingMode),
-            new HexpireCheck($redis, $taggingMode),
-            new CacheStoreCheck($storeName, 'redis', $taggingMode),
+            new PhpRedisCheck($tagMode),
+            new RedisVersionCheck($redis, $tagMode),
+            new HexpireCheck($redis, $tagMode),
+            new CacheStoreCheck($storeName, 'redis', $tagMode),
         ];
     }
 
@@ -262,6 +267,17 @@ class CacheDoctorCommand extends Command
     }
 
     /**
+     * Run cleanup verification check after cleanup completes.
+     */
+    protected function runCleanupVerification(DoctorContext $context): void
+    {
+        $check = new CleanupVerificationCheck();
+        $this->section($check->name());
+        $result = $check->run($context);
+        $this->displayCheckResult($result);
+    }
+
+    /**
      * Display the command header banner.
      */
     protected function displayHeader(): void
@@ -321,7 +337,7 @@ class CacheDoctorCommand extends Command
                         $this->line("  Service Version: <fg=cyan>{$info['redis_version']}</>");
                     }
 
-                    $this->line('  Tagging Mode: <fg=cyan>' . $store->getTaggingMode() . '</>');
+                    $this->line('  Tag Mode: <fg=cyan>' . $store->getTagMode()->value . '</>');
                 }
             }
         } catch (Exception) {
@@ -341,7 +357,7 @@ class CacheDoctorCommand extends Command
             $this->info('Cleaning up test data...');
         }
 
-        // Flush all test tags
+        // Flush all test tags (this handles most tagged items)
         $testTags = [
             'products', 'posts', 'featured', 'user:123', 'counters', 'unique',
             'permanent', 'bulk', 'color:red', 'color:blue', 'color:yellow',
@@ -358,20 +374,43 @@ class CacheDoctorCommand extends Command
             }
         }
 
-        // Delete individual test keys by pattern
+        // Delete individual test cache values by pattern (mode-aware)
+        foreach ($context->getCacheValuePatterns(self::TEST_PREFIX) as $pattern) {
+            try {
+                $this->flushKeysByPattern($context->store, $pattern);
+            } catch (Exception) {
+                // Ignore cleanup errors
+            }
+        }
+
+        // Delete tag storage structures for dynamically-created test tags (mode-aware)
+        // e.g., tagA-{random}, tagB-{random} from SharedTagFlushCheck
         try {
-            $this->flushKeysByPattern($context->store, $context->cachePrefix . self::TEST_PREFIX . '*');
+            $this->flushKeysByPattern($context->store, $context->getTagStoragePattern(self::TEST_PREFIX));
         } catch (Exception) {
             // Ignore cleanup errors
         }
 
-        // Delete tag hashes for any dynamically-created test tags (e.g., tagB-{random})
-        // These follow the pattern: {cachePrefix}_erc:tag:{testPrefix}*
-        try {
-            $tagPrefix = $context->store->getContext()->tagPrefix();
-            $this->flushKeysByPattern($context->store, $tagPrefix . self::TEST_PREFIX . '*');
-        } catch (Exception) {
-            // Ignore cleanup errors
+        // Any mode: clean up test entries from the tag registry
+        if ($context->isAnyMode()) {
+            try {
+                $registryKey = $context->store->getContext()->registryKey();
+                // Get all members matching the test prefix and remove them
+                $members = $context->redis->zRange($registryKey, 0, -1);
+                $testMembers = array_filter(
+                    $members,
+                    fn ($m) => str_starts_with($m, self::TEST_PREFIX)
+                );
+                if (! empty($testMembers)) {
+                    $context->redis->zRem($registryKey, ...$testMembers);
+                }
+                // If registry is now empty, delete it
+                if ($context->redis->zCard($registryKey) === 0) {
+                    $context->redis->del($registryKey);
+                }
+            } catch (Exception) {
+                // Ignore cleanup errors
+            }
         }
 
         if (! $silent) {

@@ -12,9 +12,9 @@ use Throwable;
  * Checks that the HEXPIRE command is available.
  *
  * HEXPIRE is required for hash field expiration, which is essential
- * for the union tagging mode implementation.
+ * for the any tagging mode implementation.
  *
- * For intersection mode, this check is skipped (HEXPIRE not needed).
+ * For all mode, this check is skipped (HEXPIRE not needed).
  */
 final class HexpireCheck implements EnvironmentCheckInterface
 {
@@ -34,9 +34,9 @@ final class HexpireCheck implements EnvironmentCheckInterface
     {
         $result = new CheckResult();
 
-        // Skip check for intersection mode - HEXPIRE not needed
-        if ($this->taggingMode === 'intersection') {
-            $result->assert(true, 'HEXPIRE check skipped (not required for intersection mode)');
+        // Skip check for all mode - HEXPIRE not needed
+        if ($this->taggingMode === 'all') {
+            $result->assert(true, 'HEXPIRE check skipped (not required for all mode)');
 
             return $result;
         }
@@ -61,12 +61,12 @@ final class HexpireCheck implements EnvironmentCheckInterface
 
     public function getFixInstructions(): ?string
     {
-        if ($this->taggingMode === 'intersection') {
+        if ($this->taggingMode === 'all') {
             return null;
         }
 
         if (! $this->available) {
-            return 'HEXPIRE requires Redis 8.0+ or Valkey 9.0+. Upgrade your Redis/Valkey server, or switch to intersection tagging mode.';
+            return 'HEXPIRE requires Redis 8.0+ or Valkey 9.0+. Upgrade your Redis/Valkey server, or switch to all tagging mode.';
         }
 
         return null;

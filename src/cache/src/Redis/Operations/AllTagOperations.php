@@ -4,29 +4,29 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache\Redis\Operations;
 
-use Hypervel\Cache\Redis\Operations\IntersectionTags\Add;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\AddEntry;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\Decrement;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\Flush;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\FlushStaleEntries;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\Forever;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\GetEntries;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\Increment;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\Prune;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\Put;
-use Hypervel\Cache\Redis\Operations\IntersectionTags\PutMany;
+use Hypervel\Cache\Redis\Operations\AllTags\Add;
+use Hypervel\Cache\Redis\Operations\AllTags\AddEntry;
+use Hypervel\Cache\Redis\Operations\AllTags\Decrement;
+use Hypervel\Cache\Redis\Operations\AllTags\Flush;
+use Hypervel\Cache\Redis\Operations\AllTags\FlushStaleEntries;
+use Hypervel\Cache\Redis\Operations\AllTags\Forever;
+use Hypervel\Cache\Redis\Operations\AllTags\GetEntries;
+use Hypervel\Cache\Redis\Operations\AllTags\Increment;
+use Hypervel\Cache\Redis\Operations\AllTags\Prune;
+use Hypervel\Cache\Redis\Operations\AllTags\Put;
+use Hypervel\Cache\Redis\Operations\AllTags\PutMany;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 
 /**
- * Container for intersection tag operations.
+ * Container for all-mode tag operations.
  *
- * This class groups all Redis operations related to intersection-based tagging,
+ * This class groups all Redis operations related to all-mode tagging,
  * providing lazy-loaded, singleton-cached operation instances.
  *
- * Used by IntersectionTaggedCache and IntersectionTagSet.
+ * Used by AllTaggedCache and AllTagSet.
  */
-class IntersectionTagOperations
+class AllTagOperations
 {
     // Combined cache + tag operations
     private ?Put $put = null;

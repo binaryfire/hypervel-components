@@ -29,25 +29,32 @@ final class SharedTagFlushCheck implements CheckInterface
         $key = $ctx->prefixed('shared:' . bin2hex(random_bytes(4)));
         $value = 'value-' . bin2hex(random_bytes(4));
 
+        $tags = [$tagA, $tagB];
+
         // Store item with both tags
-        $ctx->cache->tags([$tagA, $tagB])->put($key, $value, 60);
+        $ctx->cache->tags($tags)->put($key, $value, 60);
 
         // Verify item was stored
-        $result->assert(
-            $ctx->cache->get($key) === $value,
-            'Item with shared tags is stored'
-        );
-
-        if ($ctx->isUnionMode()) {
-            $this->testUnionMode($ctx, $result, $tagA, $tagB, $key);
+        if ($ctx->isAnyMode()) {
+            // Any mode: direct get works
+            $result->assert(
+                $ctx->cache->get($key) === $value,
+                'Item with shared tags is stored'
+            );
+            $this->testAnyMode($ctx, $result, $tagA, $tagB, $key);
         } else {
-            $this->testIntersectionMode($ctx, $result, $tagA, $tagB, $key);
+            // All mode: must use tagged get
+            $result->assert(
+                $ctx->cache->tags($tags)->get($key) === $value,
+                'Item with shared tags is stored'
+            );
+            $this->testAllMode($ctx, $result, $tagA, $tagB, $key, $tags);
         }
 
         return $result;
     }
 
-    private function testUnionMode(
+    private function testAnyMode(
         DoctorContext $ctx,
         CheckResult $result,
         string $tagA,
@@ -60,7 +67,7 @@ final class SharedTagFlushCheck implements CheckInterface
 
         $result->assert(
             $ctx->redis->hexists($tagAKey, $key) && $ctx->redis->hexists($tagBKey, $key),
-            'Key exists in both tag hashes (union mode)'
+            'Key exists in both tag hashes (any mode)'
         );
 
         // Flush Tag A
@@ -68,7 +75,7 @@ final class SharedTagFlushCheck implements CheckInterface
 
         $result->assert(
             $ctx->cache->get($key) === null,
-            'Shared tag flush removes item (union mode)'
+            'Shared tag flush removes item (any mode)'
         );
 
         // In lazy mode (Hypervel default), orphans remain in Tag B hash
@@ -79,26 +86,44 @@ final class SharedTagFlushCheck implements CheckInterface
         );
     }
 
-    private function testIntersectionMode(
+    /**
+     * @param array<string> $tags
+     */
+    private function testAllMode(
         DoctorContext $ctx,
         CheckResult $result,
         string $tagA,
         string $tagB,
         string $key,
+        array $tags,
     ): void {
+        // Verify both tag ZSETs contain entries before flush
+        $tagASetKey = $ctx->tagHashKey($tagA);
+        $tagBSetKey = $ctx->tagHashKey($tagB);
+
+        $tagACount = $ctx->redis->zCard($tagASetKey);
+        $tagBCount = $ctx->redis->zCard($tagBSetKey);
+
+        $result->assert(
+            $tagACount > 0 && $tagBCount > 0,
+            'Key exists in both tag ZSETs before flush (all mode)'
+        );
+
         // Flush Tag A
         $ctx->cache->tags([$tagA])->flush();
 
         $result->assert(
-            $ctx->cache->get($key) === null,
-            'Shared tag flush removes item (intersection mode)'
+            $ctx->cache->tags($tags)->get($key) === null,
+            'Shared tag flush removes item (all mode)'
         );
 
-        // TODO: Verify intersection mode orphan behavior
-        // Intersection mode uses sorted sets - orphans cleaned by ZREMRANGEBYSCORE
+        // In all mode, the cache key is deleted when any tag is flushed
+        // Orphaned entries remain in Tag B's ZSET until prune is run
+        $tagBCountAfter = $ctx->redis->zCard($tagBSetKey);
+
         $result->assert(
-            true,
-            'Intersection mode orphan check (placeholder)'
+            $tagBCountAfter > 0,
+            'Orphaned entry exists in shared tag ZSET (cleaned by prune command)'
         );
     }
 }

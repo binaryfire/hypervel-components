@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Cache\Redis\Operations\AllTags;
 
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Flushes all cache entries associated with intersection tags.
+ * Flushes all cache entries associated with all tags.
  *
  * This operation:
  * 1. Gets all cache keys from the tag sorted sets
@@ -27,7 +27,7 @@ class Flush
     /**
      * Flush all cache entries for the given tags.
      *
-     * @param array<string> $tagIds Array of tag identifiers (e.g., "tag:users:entries")
+     * @param array<string> $tagIds Array of tag identifiers (e.g., "_all:tag:users:entries")
      * @param array<string> $tagNames Array of tag names (e.g., ["users", "posts"])
      */
     public function execute(array $tagIds, array $tagNames): void
@@ -69,11 +69,9 @@ class Flush
             return;
         }
 
-        $prefix = $this->context->prefix();
-
-        $this->context->withConnection(function (RedisConnection $conn) use ($prefix, $tagNames) {
+        $this->context->withConnection(function (RedisConnection $conn) use ($tagNames) {
             $tagKeys = array_map(
-                fn (string $name) => $prefix . "tag:{$name}:entries",
+                fn (string $name) => $this->context->tagHashKey($name),
                 $tagNames
             );
 

@@ -5,41 +5,21 @@ declare(strict_types=1);
 namespace Hypervel\Cache\Redis\Support;
 
 use Hyperf\Redis\Pool\PoolFactory;
+use Hypervel\Cache\Redis\TagMode;
 use Hypervel\Redis\RedisConnection;
 use Redis;
 use RedisCluster;
 
 /**
- * Shared context for Redis cache operations.
+ * Mode-aware context for Redis cache operations.
  *
  * This class encapsulates the dependencies that all cache operations need,
  * providing a clean interface to Redis connection, client, and configuration.
+ * It receives TagMode via dependency injection and delegates all key-building
+ * to the TagMode enum (single source of truth for mode-specific patterns).
  */
 class StoreContext
 {
-    /**
-     * The segment used for tag hash keys.
-     * Full tag hash key format: {prefix}_erc:tag:{tag}:entries
-     */
-    public const TAG_SEGMENT = '_erc:tag:';
-
-    /**
-     * The suffix for tag hash keys (appended after tag name).
-     */
-    public const TAG_HASH_SUFFIX = ':entries';
-
-    /**
-     * The suffix used for reverse index keys.
-     * Full reverse index key format: {prefix}{key}:_erc:tags
-     */
-    public const REVERSE_INDEX_SUFFIX = ':_erc:tags';
-
-    /**
-     * The name of the tag registry sorted set.
-     * Full registry key format: {prefix}_erc:tag:registry
-     */
-    public const TAG_REGISTRY_NAME = 'registry';
-
     /**
      * The maximum expiry timestamp (Year 9999) for "forever" items.
      * Used in the tag registry to represent items with no expiration.
@@ -56,6 +36,7 @@ class StoreContext
         private readonly PoolFactory $poolFactory,
         private readonly string $connectionName,
         private readonly string $prefix,
+        private readonly TagMode $tagMode,
     ) {}
 
     /**
@@ -75,19 +56,32 @@ class StoreContext
     }
 
     /**
-     * Get the tag prefix (includes cache prefix).
+     * Get the tag mode.
      */
-    public function tagPrefix(): string
+    public function tagMode(): TagMode
     {
-        return $this->prefix . self::TAG_SEGMENT;
+        return $this->tagMode;
+    }
+
+    /**
+     * Get the tag identifier (without cache prefix).
+     *
+     * Used by All mode for namespace computation (sha1 of sorted tag IDs).
+     * Format: "_any:tag:{tagName}:entries" or "_all:tag:{tagName}:entries"
+     */
+    public function tagId(string $tag): string
+    {
+        return $this->tagMode->tagId($tag);
     }
 
     /**
      * Get the full tag hash key for a given tag.
+     *
+     * Format: "{prefix}_any:tag:{tagName}:entries" or "{prefix}_all:tag:{tagName}:entries"
      */
     public function tagHashKey(string $tag): string
     {
-        return $this->tagPrefix() . $tag . self::TAG_HASH_SUFFIX;
+        return $this->tagMode->tagKey($this->prefix, $tag);
     }
 
     /**
@@ -95,23 +89,37 @@ class StoreContext
      */
     public function tagHashSuffix(): string
     {
-        return self::TAG_HASH_SUFFIX;
+        return ':entries';
+    }
+
+    /**
+     * Get the SCAN pattern for finding all tag sorted sets.
+     *
+     * Format: "{prefix}_any:tag:*:entries" or "{prefix}_all:tag:*:entries"
+     */
+    public function tagScanPattern(): string
+    {
+        return $this->prefix . $this->tagMode->tagSegment() . '*:entries';
     }
 
     /**
      * Get the full reverse index key for a cache key.
+     *
+     * Format: "{prefix}{cacheKey}:_any:tags" or "{prefix}{cacheKey}:_all:tags"
      */
     public function reverseIndexKey(string $key): string
     {
-        return $this->prefix . $key . self::REVERSE_INDEX_SUFFIX;
+        return $this->tagMode->reverseIndexKey($this->prefix, $key);
     }
 
     /**
      * Get the tag registry key (without OPT_PREFIX).
+     *
+     * Format: "{prefix}_any:tag:registry" or "{prefix}_all:tag:registry"
      */
     public function registryKey(): string
     {
-        return $this->tagPrefix() . self::TAG_REGISTRY_NAME;
+        return $this->tagMode->registryKey($this->prefix);
     }
 
     /**
@@ -160,10 +168,12 @@ class StoreContext
 
     /**
      * Get the full tag prefix including OPT_PREFIX (for Lua scripts).
+     *
+     * Format: "{optPrefix}{prefix}_any:tag:" or "{optPrefix}{prefix}_all:tag:"
      */
     public function fullTagPrefix(): string
     {
-        return $this->optPrefix() . $this->tagPrefix();
+        return $this->optPrefix() . $this->prefix . $this->tagMode->tagSegment();
     }
 
     /**
@@ -171,7 +181,7 @@ class StoreContext
      */
     public function fullReverseIndexKey(string $key): string
     {
-        return $this->optPrefix() . $this->prefix . $key . self::REVERSE_INDEX_SUFFIX;
+        return $this->optPrefix() . $this->tagMode->reverseIndexKey($this->prefix, $key);
     }
 
     /**
@@ -179,6 +189,6 @@ class StoreContext
      */
     public function fullRegistryKey(): string
     {
-        return $this->optPrefix() . $this->tagPrefix() . self::TAG_REGISTRY_NAME;
+        return $this->optPrefix() . $this->tagMode->registryKey($this->prefix);
     }
 }

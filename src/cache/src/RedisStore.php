@@ -8,10 +8,11 @@ use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\RedisFactory;
 use Hyperf\Redis\RedisProxy;
 use Hypervel\Cache\Contracts\LockProvider;
-use Hypervel\Cache\Redis\IntersectionTaggedCache;
-use Hypervel\Cache\Redis\IntersectionTagSet;
-use Hypervel\Cache\Redis\UnionTaggedCache;
-use Hypervel\Cache\Redis\UnionTagSet;
+use Hypervel\Cache\Redis\AllTaggedCache;
+use Hypervel\Cache\Redis\AllTagSet;
+use Hypervel\Cache\Redis\AnyTaggedCache;
+use Hypervel\Cache\Redis\AnyTagSet;
+use Hypervel\Cache\Redis\TagMode;
 use Hypervel\Cache\Redis\Operations\Add;
 use Hypervel\Cache\Redis\Operations\Decrement;
 use Hypervel\Cache\Redis\Operations\Flush;
@@ -19,11 +20,11 @@ use Hypervel\Cache\Redis\Operations\Forget;
 use Hypervel\Cache\Redis\Operations\Forever;
 use Hypervel\Cache\Redis\Operations\Get;
 use Hypervel\Cache\Redis\Operations\Increment;
-use Hypervel\Cache\Redis\Operations\IntersectionTagOperations;
+use Hypervel\Cache\Redis\Operations\AllTagOperations;
+use Hypervel\Cache\Redis\Operations\AnyTagOperations;
 use Hypervel\Cache\Redis\Operations\Many;
 use Hypervel\Cache\Redis\Operations\Put;
 use Hypervel\Cache\Redis\Operations\PutMany;
-use Hypervel\Cache\Redis\Operations\UnionTagOperations;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 
@@ -52,9 +53,9 @@ class RedisStore extends TaggableStore implements LockProvider
     protected string $lockConnection;
 
     /**
-     * The tagging mode ('intersection' or 'union').
+     * The tag mode (All or Any).
      */
-    protected string $taggingMode = 'intersection';
+    protected TagMode $tagMode = TagMode::All;
 
     /**
      * Cached StoreContext instance.
@@ -92,9 +93,9 @@ class RedisStore extends TaggableStore implements LockProvider
     /**
      * Cached tag operation containers.
      */
-    private ?UnionTagOperations $unionTagOperations = null;
+    private ?AnyTagOperations $anyTagOperations = null;
 
-    private ?IntersectionTagOperations $intersectionTagOperations = null;
+    private ?AllTagOperations $allTagOperations = null;
 
     /**
      * Create a new Redis store.
@@ -209,26 +210,26 @@ class RedisStore extends TaggableStore implements LockProvider
     }
 
     /**
-     * Get the union tag operations container.
+     * Get the any tag operations container.
      *
-     * Use this to access all union-mode tagged cache operations.
+     * Use this to access all any-mode tagged cache operations.
      */
-    public function unionTagOps(): UnionTagOperations
+    public function anyTagOps(): AnyTagOperations
     {
-        return $this->unionTagOperations ??= new UnionTagOperations(
+        return $this->anyTagOperations ??= new AnyTagOperations(
             $this->getContext(),
             $this->getSerialization()
         );
     }
 
     /**
-     * Get the intersection tag operations container.
+     * Get the all tag operations container.
      *
-     * Use this to access all intersection-mode tagged cache operations.
+     * Use this to access all all-mode tagged cache operations.
      */
-    public function intersectionTagOps(): IntersectionTagOperations
+    public function allTagOps(): AllTagOperations
     {
-        return $this->intersectionTagOperations ??= new IntersectionTagOperations(
+        return $this->allTagOperations ??= new AllTagOperations(
             $this->getContext(),
             $this->getSerialization()
         );
@@ -237,43 +238,43 @@ class RedisStore extends TaggableStore implements LockProvider
     /**
      * Begin executing a new tags operation.
      */
-    public function tags(mixed $names): IntersectionTaggedCache|UnionTaggedCache
+    public function tags(mixed $names): AllTaggedCache|AnyTaggedCache
     {
         $names = is_array($names) ? $names : func_get_args();
 
-        if ($this->taggingMode === 'union') {
-            return new UnionTaggedCache(
+        if ($this->tagMode === TagMode::Any) {
+            return new AnyTaggedCache(
                 $this,
-                new UnionTagSet($this, $names)
+                new AnyTagSet($this, $names)
             );
         }
 
-        return new IntersectionTaggedCache(
+        return new AllTaggedCache(
             $this,
-            new IntersectionTagSet($this, $names)
+            new AllTagSet($this, $names)
         );
     }
 
     /**
-     * Set the tagging mode.
-     *
-     * @param string $mode Either 'intersection' or 'union'
+     * Set the tag mode.
      */
-    public function setTaggingMode(string $mode): static
+    public function setTagMode(TagMode|string $mode): static
     {
-        $this->taggingMode = in_array($mode, ['intersection', 'union'], true)
+        $this->tagMode = $mode instanceof TagMode
             ? $mode
-            : 'intersection';
+            : TagMode::fromConfig($mode);
+
+        $this->clearCachedInstances();
 
         return $this;
     }
 
     /**
-     * Get the tagging mode.
+     * Get the tag mode.
      */
-    public function getTaggingMode(): string
+    public function getTagMode(): TagMode
     {
-        return $this->taggingMode;
+        return $this->tagMode;
     }
 
     /**
@@ -344,7 +345,8 @@ class RedisStore extends TaggableStore implements LockProvider
         return $this->context ??= new StoreContext(
             $this->getPoolFactory(),
             $this->connection,
-            $this->prefix
+            $this->prefix,
+            $this->tagMode,
         );
     }
 
@@ -409,8 +411,8 @@ class RedisStore extends TaggableStore implements LockProvider
         $this->flushOperation = null;
 
         // Tag operation containers
-        $this->unionTagOperations = null;
-        $this->intersectionTagOperations = null;
+        $this->anyTagOperations = null;
+        $this->allTagOperations = null;
     }
 
     private function getGetOperation(): Get

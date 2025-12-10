@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Cache\Redis\Operations\AllTags;
 
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
@@ -10,10 +10,10 @@ use Redis;
 use RedisCluster;
 
 /**
- * Prune stale entries from intersection tag sorted sets.
+ * Prune stale entries from all tag sorted sets.
  *
- * This operation performs a complete cleanup of intersection-mode tag data:
- * 1. Discovers all tag sorted sets via SCAN (pattern: {prefix}tag:*:entries)
+ * This operation performs a complete cleanup of all-mode tag data:
+ * 1. Discovers all tag sorted sets via SCAN (pattern from StoreContext::tagScanPattern())
  * 2. Removes stale entries via ZREMRANGEBYSCORE (scores between 0 and now)
  * 3. Deletes empty sorted sets (ZCARD == 0)
  *
@@ -66,8 +66,7 @@ class Prune
     {
         return $this->context->withConnection(function (RedisConnection $conn) use ($scanCount) {
             $client = $conn->client();
-            $prefix = $this->context->prefix();
-            $pattern = $prefix . 'tag:*:entries';
+            $pattern = $this->context->tagScanPattern();
             $now = time();
 
             $tagsScanned = 0;
@@ -114,8 +113,7 @@ class Prune
     {
         return $this->context->withConnection(function (RedisConnection $conn) use ($scanCount) {
             $client = $conn->client();
-            $prefix = $this->context->prefix();
-            $pattern = $prefix . 'tag:*:entries';
+            $pattern = $this->context->tagScanPattern();
             $now = time();
 
             $tagsScanned = 0;

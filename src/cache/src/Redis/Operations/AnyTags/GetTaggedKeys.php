@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\UnionTags;
+namespace Hypervel\Cache\Redis\Operations\AnyTags;
 
 use Generator;
 use Hypervel\Cache\Redis\Support\StoreContext;

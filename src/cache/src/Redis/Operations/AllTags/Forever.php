@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Cache\Redis\Operations\AllTags;
 
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Store an item in the cache indefinitely with intersection tag tracking.
+ * Store an item in the cache indefinitely with all tag tracking.
  *
  * Combines the ZADD operations for tag tracking with the SET for
  * cache storage in a single connection checkout for efficiency.
@@ -31,7 +31,7 @@ class Forever
      *
      * @param string $key The cache key (already namespaced by caller)
      * @param mixed $value The value to store
-     * @param array<string> $tagIds Array of tag identifiers (e.g., "tag:users:entries")
+     * @param array<string> $tagIds Array of tag identifiers (e.g., "_all:tag:users:entries")
      * @return bool True if successful
      */
     public function execute(string $key, mixed $value, array $tagIds): bool

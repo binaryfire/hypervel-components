@@ -11,7 +11,7 @@ use Hypervel\Cache\Console\Doctor\DoctorContext;
  * Tests forever() storage (no expiration).
  *
  * Basic forever storage is mode-agnostic, but hash field TTL verification
- * is union mode specific.
+ * is any mode specific.
  */
 final class ForeverStorageCheck implements CheckInterface
 {
@@ -33,40 +33,56 @@ final class ForeverStorageCheck implements CheckInterface
         );
 
         // Forever with tags
-        $ctx->cache->tags([$ctx->prefixed('permanent')])->forever($ctx->prefixed('forever:tagged'), 'also permanent');
-        $keyTtl = $ctx->redis->ttl($ctx->cachePrefix . $ctx->prefixed('forever:tagged'));
+        $foreverTag = $ctx->prefixed('permanent');
+        $foreverKey = $ctx->prefixed('forever:tagged');
+        $ctx->cache->tags([$foreverTag])->forever($foreverKey, 'also permanent');
 
-        $result->assert(
-            $keyTtl === -1,
-            'forever() with tags: key has no expiration'
-        );
-
-        if ($ctx->isUnionMode()) {
-            $this->testUnionModeHashTtl($ctx, $result);
+        if ($ctx->isAnyMode()) {
+            // Any mode: key is stored without namespace modification
+            $keyTtl = $ctx->redis->ttl($ctx->cachePrefix . $foreverKey);
+            $result->assert(
+                $keyTtl === -1,
+                'forever() with tags: key has no expiration'
+            );
+            $this->testAnyModeHashTtl($ctx, $result, $foreverTag, $foreverKey);
         } else {
-            $this->testIntersectionMode($ctx, $result);
+            // All mode: key is namespaced with sha1 of tag IDs
+            $namespacedKey = $ctx->namespacedKey([$foreverTag], $foreverKey);
+            $keyTtl = $ctx->redis->ttl($ctx->cachePrefix . $namespacedKey);
+            $result->assert(
+                $keyTtl === -1,
+                'forever() with tags: key has no expiration'
+            );
+            $this->testAllMode($ctx, $result, $foreverTag, $foreverKey, $namespacedKey);
         }
 
         return $result;
     }
 
-    private function testUnionModeHashTtl(DoctorContext $ctx, CheckResult $result): void
+    private function testAnyModeHashTtl(DoctorContext $ctx, CheckResult $result, string $tag, string $key): void
     {
         // Verify hash field also has no expiration
-        $fieldTtl = $ctx->redis->httl($ctx->tagHashKey($ctx->prefixed('permanent')), [$ctx->prefixed('forever:tagged')]);
+        $fieldTtl = $ctx->redis->httl($ctx->tagHashKey($tag), [$key]);
         $result->assert(
             $fieldTtl[0] === -1,
-            'forever() with tags: hash field has no expiration (union mode)'
+            'forever() with tags: hash field has no expiration (any mode)'
         );
     }
 
-    private function testIntersectionMode(DoctorContext $ctx, CheckResult $result): void
-    {
-        // TODO: Verify intersection mode sorted set score for forever items
-        // Forever items in intersection mode have score -1
+    private function testAllMode(
+        DoctorContext $ctx,
+        CheckResult $result,
+        string $tag,
+        string $key,
+        string $namespacedKey,
+    ): void {
+        // Verify sorted set score is -1 for forever items
+        $tagSetKey = $ctx->tagHashKey($tag);
+        $score = $ctx->redis->zScore($tagSetKey, $namespacedKey);
+
         $result->assert(
-            true,
-            'Intersection mode forever tag structure (placeholder)'
+            $score === -1.0,
+            'forever() with tags: ZSET entry has score -1 (all mode)'
         );
     }
 }

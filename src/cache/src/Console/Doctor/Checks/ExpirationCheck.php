@@ -13,7 +13,7 @@ use Symfony\Component\Console\Output\OutputInterface;
  * Tests TTL expiration behavior.
  *
  * Basic expiration is mode-agnostic, but hash field cleanup verification
- * is union mode specific.
+ * is any mode specific.
  */
 final class ExpirationCheck implements CheckInterface
 {
@@ -42,21 +42,26 @@ final class ExpirationCheck implements CheckInterface
         $this->output?->writeln('  <fg=gray>Waiting 2 seconds for expiration...</>');
         sleep(2);
 
-        $result->assert(
-            $ctx->cache->get($key) === null,
-            'Item expired after TTL'
-        );
-
-        if ($ctx->isUnionMode()) {
-            $this->testUnionModeExpiration($ctx, $result, $tag, $key);
+        if ($ctx->isAnyMode()) {
+            // Any mode: direct get works
+            $result->assert(
+                $ctx->cache->get($key) === null,
+                'Item expired after TTL'
+            );
+            $this->testAnyModeExpiration($ctx, $result, $tag, $key);
         } else {
-            $this->testIntersectionModeExpiration($ctx, $result, $tag, $key);
+            // All mode: must use tagged get
+            $result->assert(
+                $ctx->cache->tags([$tag])->get($key) === null,
+                'Item expired after TTL'
+            );
+            $this->testAllModeExpiration($ctx, $result, $tag, $key);
         }
 
         return $result;
     }
 
-    private function testUnionModeExpiration(
+    private function testAnyModeExpiration(
         DoctorContext $ctx,
         CheckResult $result,
         string $tag,
@@ -72,16 +77,36 @@ final class ExpirationCheck implements CheckInterface
         );
     }
 
-    private function testIntersectionModeExpiration(
+    private function testAllModeExpiration(
         DoctorContext $ctx,
         CheckResult $result,
         string $tag,
         string $key,
     ): void {
-        // TODO: Verify intersection mode sorted set cleanup (ZREMRANGEBYSCORE)
+        // In all mode, the ZSET entry remains until flushStale() is called
+        // The cache key has expired (Redis TTL), but the ZSET entry is stale
+        $tagSetKey = $ctx->tagHashKey($tag);
+
+        // Compute the namespaced key using central source of truth
+        $namespacedKey = $ctx->namespacedKey([$tag], $key);
+
+        // Check ZSET entry exists (stale but present)
+        $score = $ctx->redis->zScore($tagSetKey, $namespacedKey);
+        $staleEntryExists = $score !== false;
+
         $result->assert(
-            true,
-            'Intersection mode expiration cleanup (placeholder)'
+            $staleEntryExists,
+            'Stale ZSET entry exists after cache key expired (before cleanup)'
+        );
+
+        // Run cleanup to remove stale entries
+        $ctx->cache->tags([$tag])->flushStale();
+
+        // Now the ZSET entry should be gone
+        $scoreAfterCleanup = $ctx->redis->zScore($tagSetKey, $namespacedKey);
+        $result->assert(
+            $scoreAfterCleanup === false,
+            'ZSET entry removed after flushStale() cleanup'
         );
     }
 }

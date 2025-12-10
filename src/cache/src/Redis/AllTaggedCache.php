@@ -12,7 +12,7 @@ use Hypervel\Cache\RedisStore;
 use Hypervel\Cache\TaggedCache;
 use Hypervel\Cache\TagSet;
 
-class IntersectionTaggedCache extends TaggedCache
+class AllTaggedCache extends TaggedCache
 {
     /**
      * The cache store implementation.
@@ -24,7 +24,7 @@ class IntersectionTaggedCache extends TaggedCache
     /**
      * The tag set instance.
      *
-     * @var IntersectionTagSet
+     * @var AllTagSet
      */
     protected TagSet $tags;
 
@@ -40,7 +40,7 @@ class IntersectionTaggedCache extends TaggedCache
                 return false;
             }
 
-            return $this->store->intersectionTagOps()->add()->execute(
+            return $this->store->allTagOps()->add()->execute(
                 $this->itemKey($key),
                 $value,
                 $seconds,
@@ -50,7 +50,7 @@ class IntersectionTaggedCache extends TaggedCache
 
         // Null TTL: non-atomic get + forever (matches Repository::add behavior)
         if (is_null($this->get($key))) {
-            $result = $this->store->intersectionTagOps()->forever()->execute(
+            $result = $this->store->allTagOps()->forever()->execute(
                 $this->itemKey($key),
                 $value,
                 $this->tags->tagIds()
@@ -85,7 +85,7 @@ class IntersectionTaggedCache extends TaggedCache
             return $this->forget($key);
         }
 
-        $result = $this->store->intersectionTagOps()->put()->execute(
+        $result = $this->store->allTagOps()->put()->execute(
             $this->itemKey($key),
             $value,
             $seconds,
@@ -114,7 +114,7 @@ class IntersectionTaggedCache extends TaggedCache
             return false;
         }
 
-        $result = $this->store->intersectionTagOps()->putMany()->execute(
+        $result = $this->store->allTagOps()->putMany()->execute(
             $values,
             $seconds,
             $this->tags->tagIds(),
@@ -135,7 +135,7 @@ class IntersectionTaggedCache extends TaggedCache
      */
     public function increment(string $key, int $value = 1): bool|int
     {
-        return $this->store->intersectionTagOps()->increment()->execute(
+        return $this->store->allTagOps()->increment()->execute(
             $this->itemKey($key),
             $value,
             $this->tags->tagIds()
@@ -147,7 +147,7 @@ class IntersectionTaggedCache extends TaggedCache
      */
     public function decrement(string $key, int $value = 1): bool|int
     {
-        return $this->store->intersectionTagOps()->decrement()->execute(
+        return $this->store->allTagOps()->decrement()->execute(
             $this->itemKey($key),
             $value,
             $this->tags->tagIds()
@@ -159,7 +159,7 @@ class IntersectionTaggedCache extends TaggedCache
      */
     public function forever(string $key, mixed $value): bool
     {
-        $result = $this->store->intersectionTagOps()->forever()->execute(
+        $result = $this->store->allTagOps()->forever()->execute(
             $this->itemKey($key),
             $value,
             $this->tags->tagIds()
@@ -177,7 +177,7 @@ class IntersectionTaggedCache extends TaggedCache
      */
     public function flush(): bool
     {
-        $this->store->intersectionTagOps()->flush()->execute($this->tags->tagIds(), $this->tags->getNames());
+        $this->store->allTagOps()->flush()->execute($this->tags->tagIds(), $this->tags->getNames());
 
         return true;
     }

@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Hypervel\Cache\Redis\Operations\IntersectionTags;
+namespace Hypervel\Cache\Redis\Operations\AllTags;
 
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Store an item in the cache if it doesn't exist, with intersection tag tracking.
+ * Store an item in the cache if it doesn't exist, with all tag tracking.
  *
  * Combines the ZADD operations for tag tracking with the atomic add
  * in a single connection checkout for efficiency.

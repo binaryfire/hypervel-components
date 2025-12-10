@@ -11,7 +11,7 @@ use Hypervel\Cache\Console\Doctor\DoctorContext;
  * Tests increment and decrement operations with and without tags.
  *
  * Basic increment/decrement is mode-agnostic, but hash field TTL verification
- * is union mode specific.
+ * is any mode specific.
  */
 final class IncrementDecrementCheck implements CheckInterface
 {
@@ -40,12 +40,24 @@ final class IncrementDecrementCheck implements CheckInterface
         );
 
         // Increment with tags
-        $ctx->cache->tags([$ctx->prefixed('counters')])->put($ctx->prefixed('incr:tagged'), 10, 60);
-        $taggedResult = $ctx->cache->tags([$ctx->prefixed('counters')])->increment($ctx->prefixed('incr:tagged'), 15);
-        $result->assert(
-            $taggedResult === 25 && $ctx->cache->get($ctx->prefixed('incr:tagged')) === '25',
-            'increment() works with tags'
-        );
+        $counterTag = $ctx->prefixed('counters');
+        $taggedKey = $ctx->prefixed('incr:tagged');
+        $ctx->cache->tags([$counterTag])->put($taggedKey, 10, 60);
+        $taggedResult = $ctx->cache->tags([$counterTag])->increment($taggedKey, 15);
+
+        if ($ctx->isAnyMode()) {
+            // Any mode: direct get works
+            $result->assert(
+                $taggedResult === 25 && $ctx->cache->get($taggedKey) === '25',
+                'increment() works with tags'
+            );
+        } else {
+            // All mode: must use tagged get
+            $result->assert(
+                $taggedResult === 25 && $ctx->cache->tags([$counterTag])->get($taggedKey) === '25',
+                'increment() works with tags'
+            );
+        }
 
         // Test increment on non-existent key (creates it)
         $ctx->cache->forget($ctx->prefixed('incr:new'));
@@ -55,32 +67,42 @@ final class IncrementDecrementCheck implements CheckInterface
             'increment() creates non-existent key'
         );
 
-        if ($ctx->isUnionMode()) {
-            $this->testUnionModeHashTtl($ctx, $result);
+        if ($ctx->isAnyMode()) {
+            $this->testAnyModeHashTtl($ctx, $result);
         } else {
-            $this->testIntersectionMode($ctx, $result);
+            $this->testAllMode($ctx, $result);
         }
 
         return $result;
     }
 
-    private function testUnionModeHashTtl(DoctorContext $ctx, CheckResult $result): void
+    private function testAnyModeHashTtl(DoctorContext $ctx, CheckResult $result): void
     {
         // Verify hash field has no expiration for non-TTL key
         $ttl = $ctx->redis->httl($ctx->tagHashKey($ctx->prefixed('counters')), [$ctx->prefixed('incr:new')]);
         $result->assert(
             $ttl[0] === -1,
-            'Tag entry for non-TTL key has no expiration (union mode)'
+            'Tag entry for non-TTL key has no expiration (any mode)'
         );
     }
 
-    private function testIntersectionMode(DoctorContext $ctx, CheckResult $result): void
+    private function testAllMode(DoctorContext $ctx, CheckResult $result): void
     {
-        // TODO: Verify intersection mode tag structure for increment
-        // Intersection mode uses sorted sets with TTL as score
+        // Verify ZSET entry exists for incremented key
+        $counterTag = $ctx->prefixed('counters');
+        $incrKey = $ctx->prefixed('incr:new');
+
+        $tagSetKey = $ctx->tagHashKey($counterTag);
+
+        // Compute namespaced key using central source of truth
+        $namespacedKey = $ctx->namespacedKey([$counterTag], $incrKey);
+
+        // Verify ZSET entry exists
+        // Note: increment on non-existent key creates with no TTL, so score should be -1
+        $score = $ctx->redis->zScore($tagSetKey, $namespacedKey);
         $result->assert(
-            true,
-            'Intersection mode increment tag structure (placeholder)'
+            $score !== false,
+            'ZSET entry exists for incremented key (all mode)'
         );
     }
 }
