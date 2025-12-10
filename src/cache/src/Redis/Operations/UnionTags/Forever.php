@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
-use Exception;
-use Hypervel\Cache\Redis\Support\TaggedOperationErrorHandler;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
@@ -53,69 +51,65 @@ class Forever
      */
     private function executeCluster(string $key, mixed $value, array $tags): bool
     {
-        try {
-            return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $tags) {
-                $client = $conn->client();
-                $prefix = $this->context->prefix();
+        return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $tags) {
+            $client = $conn->client();
+            $prefix = $this->context->prefix();
 
-                // Get old tags to handle replacement correctly (remove from old, add to new)
-                $tagsKey = $this->context->reverseIndexKey($key);
-                $oldTags = $client->smembers($tagsKey);
+            // Get old tags to handle replacement correctly (remove from old, add to new)
+            $tagsKey = $this->context->reverseIndexKey($key);
+            $oldTags = $client->smembers($tagsKey);
 
-                // Store the actual cache value without expiration
-                $client->set(
-                    $prefix . $key,
-                    $this->serialization->serialize($value)
-                );
+            // Store the actual cache value without expiration
+            $client->set(
+                $prefix . $key,
+                $this->serialization->serialize($value)
+            );
 
-                // Store reverse index of tags for this key
-                // Use multi() as these keys are in the same slot
-                $multi = $client->multi();
-                $multi->del($tagsKey);
+            // Store reverse index of tags for this key
+            // Use multi() as these keys are in the same slot
+            $multi = $client->multi();
+            $multi->del($tagsKey);
 
-                if (! empty($tags)) {
-                    $multi->sadd($tagsKey, ...$tags);
-                }
+            if (! empty($tags)) {
+                $multi->sadd($tagsKey, ...$tags);
+            }
 
-                $multi->exec();
+            $multi->exec();
 
-                // Remove item from tags it no longer belongs to
-                $tagsToRemove = array_diff($oldTags, $tags);
+            // Remove item from tags it no longer belongs to
+            $tagsToRemove = array_diff($oldTags, $tags);
 
-                foreach ($tagsToRemove as $tag) {
-                    $tag = (string) $tag;
-                    $client->hdel($this->context->tagHashKey($tag), $key);
-                }
+            foreach ($tagsToRemove as $tag) {
+                $tag = (string) $tag;
+                $client->hdel($this->context->tagHashKey($tag), $key);
+            }
 
-                // Calculate expiry for Registry (Year 9999)
-                $expiry = StoreContext::MAX_EXPIRY;
-                $registryKey = $this->context->registryKey();
+            // Calculate expiry for Registry (Year 9999)
+            $expiry = StoreContext::MAX_EXPIRY;
+            $registryKey = $this->context->registryKey();
 
-                // 1. Add to each tag's hash without expiration (Cross-slot, sequential)
+            // 1. Add to each tag's hash without expiration (Cross-slot, sequential)
+            foreach ($tags as $tag) {
+                $tag = (string) $tag;
+                $client->hset($this->context->tagHashKey($tag), $key, StoreContext::TAG_FIELD_VALUE);
+                // No HEXPIRE for forever items
+            }
+
+            // 2. Update Registry (Same slot, single command optimization)
+            if (! empty($tags)) {
+                $zaddArgs = [];
+
                 foreach ($tags as $tag) {
-                    $tag = (string) $tag;
-                    $client->hset($this->context->tagHashKey($tag), $key, StoreContext::TAG_FIELD_VALUE);
-                    // No HEXPIRE for forever items
+                    $zaddArgs[] = $expiry;
+                    $zaddArgs[] = (string) $tag;
                 }
 
-                // 2. Update Registry (Same slot, single command optimization)
-                if (! empty($tags)) {
-                    $zaddArgs = [];
+                // Update Registry: ZADD with GT (Greater Than) to only extend expiry
+                $client->zadd($registryKey, ['GT'], ...$zaddArgs);
+            }
 
-                    foreach ($tags as $tag) {
-                        $zaddArgs[] = $expiry;
-                        $zaddArgs[] = (string) $tag;
-                    }
-
-                    // Update Registry: ZADD with GT (Greater Than) to only extend expiry
-                    $client->zadd($registryKey, ['GT'], ...$zaddArgs);
-                }
-
-                return true;
-            });
-        } catch (Exception $e) {
-            TaggedOperationErrorHandler::handle($e);
-        }
+            return true;
+        });
     }
 
     /**
@@ -123,12 +117,11 @@ class Forever
      */
     private function executeUsingLua(string $key, mixed $value, array $tags): bool
     {
-        try {
-            return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $tags) {
-                $client = $conn->client();
-                $prefix = $this->context->prefix();
+        return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $tags) {
+            $client = $conn->client();
+            $prefix = $this->context->prefix();
 
-                $script = <<<'LUA'
+            $script = <<<'LUA'
                 local key = KEYS[1]
                 local tagsKey = KEYS[2]
                 local val = ARGV[1]
@@ -176,29 +169,26 @@ class Forever
                 return true
 LUA;
 
-                $args = [
-                    $prefix . $key,                              // KEYS[1]
-                    $this->context->reverseIndexKey($key),       // KEYS[2]
-                    $this->serialization->serializeForLua($value), // ARGV[1]
-                    $this->context->fullTagPrefix(),             // ARGV[2]
-                    $this->context->fullRegistryKey(),           // ARGV[3]
-                    $key,                                        // ARGV[4]
-                    $this->context->tagHashSuffix(),             // ARGV[5]
-                    ...$tags,                                     // ARGV[6...]
-                ];
+            $args = [
+                $prefix . $key,                              // KEYS[1]
+                $this->context->reverseIndexKey($key),       // KEYS[2]
+                $this->serialization->serializeForLua($value), // ARGV[1]
+                $this->context->fullTagPrefix(),             // ARGV[2]
+                $this->context->fullRegistryKey(),           // ARGV[3]
+                $key,                                        // ARGV[4]
+                $this->context->tagHashSuffix(),             // ARGV[5]
+                ...$tags,                                     // ARGV[6...]
+            ];
 
-                $scriptHash = sha1($script);
-                $result = $client->evalSha($scriptHash, $args, 2);
+            $scriptHash = sha1($script);
+            $result = $client->evalSha($scriptHash, $args, 2);
 
-                // evalSha returns false if script not loaded (NOSCRIPT), fall back to eval
-                if ($result === false) {
-                    $client->eval($script, $args, 2);
-                }
+            // evalSha returns false if script not loaded (NOSCRIPT), fall back to eval
+            if ($result === false) {
+                $client->eval($script, $args, 2);
+            }
 
-                return true;
-            });
-        } catch (Exception $e) {
-            TaggedOperationErrorHandler::handle($e);
-        }
+            return true;
+        });
     }
 }

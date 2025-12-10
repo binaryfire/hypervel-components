@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
-use Exception;
-use Hypervel\Cache\Redis\Support\TaggedOperationErrorHandler;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
@@ -53,66 +51,62 @@ class Add
      */
     private function executeCluster(string $key, mixed $value, int $seconds, array $tags): bool
     {
-        try {
-            return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $seconds, $tags) {
-                $client = $conn->client();
-                $prefix = $this->context->prefix();
+        return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $seconds, $tags) {
+            $client = $conn->client();
+            $prefix = $this->context->prefix();
 
-                // First try to add the key with NX flag
-                $added = $client->set(
-                    $prefix . $key,
-                    $this->serialization->serialize($value),
-                    ['EX' => max(1, $seconds), 'NX']
-                );
+            // First try to add the key with NX flag
+            $added = $client->set(
+                $prefix . $key,
+                $this->serialization->serialize($value),
+                ['EX' => max(1, $seconds), 'NX']
+            );
 
-                if (! $added) {
-                    return false;
-                }
+            if (! $added) {
+                return false;
+            }
 
-                // If successfully added, add to tags
-                // Note: RedisCluster does not support pipeline(), so we execute sequentially.
-                // This means we lose atomicity for the tag updates, but that's the trade-off for clusters.
+            // If successfully added, add to tags
+            // Note: RedisCluster does not support pipeline(), so we execute sequentially.
+            // This means we lose atomicity for the tag updates, but that's the trade-off for clusters.
 
-                // Store reverse index of tags for this key
-                $tagsKey = $this->context->reverseIndexKey($key);
+            // Store reverse index of tags for this key
+            $tagsKey = $this->context->reverseIndexKey($key);
 
-                if (! empty($tags)) {
-                    // Use multi() for reverse index updates (same slot)
-                    $multi = $client->multi();
-                    $multi->sadd($tagsKey, ...$tags);
-                    $multi->expire($tagsKey, max(1, $seconds));
-                    $multi->exec();
-                }
+            if (! empty($tags)) {
+                // Use multi() for reverse index updates (same slot)
+                $multi = $client->multi();
+                $multi->sadd($tagsKey, ...$tags);
+                $multi->expire($tagsKey, max(1, $seconds));
+                $multi->exec();
+            }
 
-                // Add to tags with field expiration (using HSETEX for atomic operation)
-                // And update the Tag Registry
-                $registryKey = $this->context->registryKey();
-                $expiry = time() + $seconds;
+            // Add to tags with field expiration (using HSETEX for atomic operation)
+            // And update the Tag Registry
+            $registryKey = $this->context->registryKey();
+            $expiry = time() + $seconds;
 
-                // 1. Update Tag Hashes (Cross-slot, must be sequential)
+            // 1. Update Tag Hashes (Cross-slot, must be sequential)
+            foreach ($tags as $tag) {
+                $tag = (string) $tag;
+                $client->hsetex($this->context->tagHashKey($tag), [$key => StoreContext::TAG_FIELD_VALUE], ['EX' => $seconds]);
+            }
+
+            // 2. Update Registry (Same slot, single command optimization)
+            if (! empty($tags)) {
+                $zaddArgs = [];
+
                 foreach ($tags as $tag) {
-                    $tag = (string) $tag;
-                    $client->hsetex($this->context->tagHashKey($tag), [$key => StoreContext::TAG_FIELD_VALUE], ['EX' => $seconds]);
+                    $zaddArgs[] = $expiry;
+                    $zaddArgs[] = (string) $tag;
                 }
 
-                // 2. Update Registry (Same slot, single command optimization)
-                if (! empty($tags)) {
-                    $zaddArgs = [];
+                // Update Registry: ZADD with GT (Greater Than) to only extend expiry
+                $client->zadd($registryKey, ['GT'], ...$zaddArgs);
+            }
 
-                    foreach ($tags as $tag) {
-                        $zaddArgs[] = $expiry;
-                        $zaddArgs[] = (string) $tag;
-                    }
-
-                    // Update Registry: ZADD with GT (Greater Than) to only extend expiry
-                    $client->zadd($registryKey, ['GT'], ...$zaddArgs);
-                }
-
-                return true;
-            });
-        } catch (Exception $e) {
-            TaggedOperationErrorHandler::handle($e);
-        }
+            return true;
+        });
     }
 
     /**
@@ -120,12 +114,11 @@ class Add
      */
     private function executeUsingLua(string $key, mixed $value, int $seconds, array $tags): bool
     {
-        try {
-            return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $seconds, $tags) {
-                $client = $conn->client();
-                $prefix = $this->context->prefix();
+        return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $seconds, $tags) {
+            $client = $conn->client();
+            $prefix = $this->context->prefix();
 
-                $script = <<<'LUA'
+            $script = <<<'LUA'
                 local key = KEYS[1]
                 local tagsKey = KEYS[2]
                 local val = ARGV[1]
@@ -168,31 +161,28 @@ class Add
                 return true
 LUA;
 
-                $args = [
-                    $prefix . $key,                              // KEYS[1]
-                    $this->context->reverseIndexKey($key),       // KEYS[2]
-                    $this->serialization->serializeForLua($value), // ARGV[1]
-                    max(1, $seconds),                            // ARGV[2]
-                    $this->context->fullTagPrefix(),             // ARGV[3]
-                    $this->context->fullRegistryKey(),           // ARGV[4]
-                    time(),                                      // ARGV[5]
-                    $key,                                        // ARGV[6] (Raw key for hash field)
-                    $this->context->tagHashSuffix(),             // ARGV[7]
-                    ...$tags,                                     // ARGV[8...]
-                ];
+            $args = [
+                $prefix . $key,                              // KEYS[1]
+                $this->context->reverseIndexKey($key),       // KEYS[2]
+                $this->serialization->serializeForLua($value), // ARGV[1]
+                max(1, $seconds),                            // ARGV[2]
+                $this->context->fullTagPrefix(),             // ARGV[3]
+                $this->context->fullRegistryKey(),           // ARGV[4]
+                time(),                                      // ARGV[5]
+                $key,                                        // ARGV[6] (Raw key for hash field)
+                $this->context->tagHashSuffix(),             // ARGV[7]
+                ...$tags,                                     // ARGV[8...]
+            ];
 
-                $scriptHash = sha1($script);
-                $result = $client->evalSha($scriptHash, $args, 2);
+            $scriptHash = sha1($script);
+            $result = $client->evalSha($scriptHash, $args, 2);
 
-                // evalSha returns false if script not loaded (NOSCRIPT), fall back to eval
-                if ($result === false) {
-                    $result = $client->eval($script, $args, 2);
-                }
+            // evalSha returns false if script not loaded (NOSCRIPT), fall back to eval
+            if ($result === false) {
+                $result = $client->eval($script, $args, 2);
+            }
 
-                return (bool) $result;
-            });
-        } catch (Exception $e) {
-            TaggedOperationErrorHandler::handle($e);
-        }
+            return (bool) $result;
+        });
     }
 }

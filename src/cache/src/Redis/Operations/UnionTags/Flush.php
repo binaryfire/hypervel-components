@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
-use Exception;
-use Hypervel\Cache\Redis\Support\TaggedOperationErrorHandler;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
@@ -57,53 +55,49 @@ class Flush
      */
     private function executeCluster(array $tags): bool
     {
-        try {
-            return $this->context->withConnection(function (RedisConnection $conn) use ($tags) {
-                $client = $conn->client();
+        return $this->context->withConnection(function (RedisConnection $conn) use ($tags) {
+            $client = $conn->client();
 
-                // Collect all keys from all tags
-                $keyGenerator = function () use ($tags) {
-                    foreach ($tags as $tag) {
-                        $keys = $this->getTaggedKeys->execute((string) $tag);
-
-                        foreach ($keys as $key) {
-                            yield $key;
-                        }
-                    }
-                };
-
-                $buffer = [];
-                $bufferSize = 0;
-
-                foreach ($keyGenerator() as $key) {
-                    $buffer[$key] = true;
-                    $bufferSize++;
-
-                    if ($bufferSize >= self::CHUNK_SIZE) {
-                        $this->processChunkCluster($client, array_keys($buffer));
-                        $buffer = [];
-                        $bufferSize = 0;
-                    }
-                }
-
-                if ($bufferSize > 0) {
-                    $this->processChunkCluster($client, array_keys($buffer));
-                }
-
-                // Delete the tag hashes themselves and remove from registry
-                $registryKey = $this->context->registryKey();
-
+            // Collect all keys from all tags
+            $keyGenerator = function () use ($tags) {
                 foreach ($tags as $tag) {
-                    $tag = (string) $tag;
-                    $client->del($this->context->tagHashKey($tag));
-                    $client->zrem($registryKey, $tag);
-                }
+                    $keys = $this->getTaggedKeys->execute((string) $tag);
 
-                return true;
-            });
-        } catch (Exception $e) {
-            TaggedOperationErrorHandler::handle($e);
-        }
+                    foreach ($keys as $key) {
+                        yield $key;
+                    }
+                }
+            };
+
+            $buffer = [];
+            $bufferSize = 0;
+
+            foreach ($keyGenerator() as $key) {
+                $buffer[$key] = true;
+                $bufferSize++;
+
+                if ($bufferSize >= self::CHUNK_SIZE) {
+                    $this->processChunkCluster($client, array_keys($buffer));
+                    $buffer = [];
+                    $bufferSize = 0;
+                }
+            }
+
+            if ($bufferSize > 0) {
+                $this->processChunkCluster($client, array_keys($buffer));
+            }
+
+            // Delete the tag hashes themselves and remove from registry
+            $registryKey = $this->context->registryKey();
+
+            foreach ($tags as $tag) {
+                $tag = (string) $tag;
+                $client->del($this->context->tagHashKey($tag));
+                $client->zrem($registryKey, $tag);
+            }
+
+            return true;
+        });
     }
 
     /**
@@ -111,56 +105,52 @@ class Flush
      */
     private function executeUsingPipeline(array $tags): bool
     {
-        try {
-            return $this->context->withConnection(function (RedisConnection $conn) use ($tags) {
-                $client = $conn->client();
+        return $this->context->withConnection(function (RedisConnection $conn) use ($tags) {
+            $client = $conn->client();
 
-                // Collect all keys from all tags
-                $keyGenerator = function () use ($tags) {
-                    foreach ($tags as $tag) {
-                        $keys = $this->getTaggedKeys->execute((string) $tag);
-
-                        foreach ($keys as $key) {
-                            yield $key;
-                        }
-                    }
-                };
-
-                $buffer = [];
-                $bufferSize = 0;
-
-                foreach ($keyGenerator() as $key) {
-                    $buffer[$key] = true;
-                    $bufferSize++;
-
-                    if ($bufferSize >= self::CHUNK_SIZE) {
-                        $this->processChunkPipeline($client, array_keys($buffer));
-                        $buffer = [];
-                        $bufferSize = 0;
-                    }
-                }
-
-                if ($bufferSize > 0) {
-                    $this->processChunkPipeline($client, array_keys($buffer));
-                }
-
-                // Delete the tag hashes themselves and remove from registry
-                $registryKey = $this->context->registryKey();
-                $pipeline = $client->pipeline();
-
+            // Collect all keys from all tags
+            $keyGenerator = function () use ($tags) {
                 foreach ($tags as $tag) {
-                    $tag = (string) $tag;
-                    $pipeline->del($this->context->tagHashKey($tag));
-                    $pipeline->zrem($registryKey, $tag);
+                    $keys = $this->getTaggedKeys->execute((string) $tag);
+
+                    foreach ($keys as $key) {
+                        yield $key;
+                    }
                 }
+            };
 
-                $pipeline->exec();
+            $buffer = [];
+            $bufferSize = 0;
 
-                return true;
-            });
-        } catch (Exception $e) {
-            TaggedOperationErrorHandler::handle($e);
-        }
+            foreach ($keyGenerator() as $key) {
+                $buffer[$key] = true;
+                $bufferSize++;
+
+                if ($bufferSize >= self::CHUNK_SIZE) {
+                    $this->processChunkPipeline($client, array_keys($buffer));
+                    $buffer = [];
+                    $bufferSize = 0;
+                }
+            }
+
+            if ($bufferSize > 0) {
+                $this->processChunkPipeline($client, array_keys($buffer));
+            }
+
+            // Delete the tag hashes themselves and remove from registry
+            $registryKey = $this->context->registryKey();
+            $pipeline = $client->pipeline();
+
+            foreach ($tags as $tag) {
+                $tag = (string) $tag;
+                $pipeline->del($this->context->tagHashKey($tag));
+                $pipeline->zrem($registryKey, $tag);
+            }
+
+            $pipeline->exec();
+
+            return true;
+        });
     }
 
     /**

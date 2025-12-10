@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
-use Exception;
-use Hypervel\Cache\Redis\Support\TaggedOperationErrorHandler;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
@@ -56,105 +54,101 @@ class PutMany
      */
     private function executeCluster(array $values, int $seconds, array $tags): bool
     {
-        try {
-            return $this->context->withConnection(function (RedisConnection $conn) use ($values, $seconds, $tags) {
-                $client = $conn->client();
-                $prefix = $this->context->prefix();
-                $registryKey = $this->context->registryKey();
-                $expiry = time() + $seconds;
-                $ttl = max(1, $seconds);
+        return $this->context->withConnection(function (RedisConnection $conn) use ($values, $seconds, $tags) {
+            $client = $conn->client();
+            $prefix = $this->context->prefix();
+            $registryKey = $this->context->registryKey();
+            $expiry = time() + $seconds;
+            $ttl = max(1, $seconds);
 
-                foreach (array_chunk($values, self::CHUNK_SIZE, true) as $chunk) {
-                    // Step 1: Retrieve old tags for all keys in the chunk
-                    $oldTagsResults = [];
+            foreach (array_chunk($values, self::CHUNK_SIZE, true) as $chunk) {
+                // Step 1: Retrieve old tags for all keys in the chunk
+                $oldTagsResults = [];
 
-                    foreach ($chunk as $key => $value) {
-                        $oldTagsResults[] = $client->smembers($this->context->reverseIndexKey($key));
+                foreach ($chunk as $key => $value) {
+                    $oldTagsResults[] = $client->smembers($this->context->reverseIndexKey($key));
+                }
+
+                // Step 2: Prepare updates
+                $keysByNewTag = [];
+                $keysToRemoveByTag = [];
+
+                $i = 0;
+
+                foreach ($chunk as $key => $value) {
+                    $oldTags = $oldTagsResults[$i] ?? [];
+                    $i++;
+
+                    // Calculate tags to remove (Old Tags - New Tags)
+                    $tagsToRemove = array_diff($oldTags, $tags);
+
+                    foreach ($tagsToRemove as $tag) {
+                        $keysToRemoveByTag[$tag][] = $key;
                     }
 
-                    // Step 2: Prepare updates
-                    $keysByNewTag = [];
-                    $keysToRemoveByTag = [];
+                    // 1. Store the actual cache value
+                    $client->setex(
+                        $prefix . $key,
+                        $ttl,
+                        $this->serialization->serialize($value)
+                    );
 
-                    $i = 0;
+                    // 2. Store reverse index of tags for this key
+                    $tagsKey = $this->context->reverseIndexKey($key);
 
-                    foreach ($chunk as $key => $value) {
-                        $oldTags = $oldTagsResults[$i] ?? [];
-                        $i++;
+                    // Use multi() for reverse index updates (same slot)
+                    $multi = $client->multi();
+                    $multi->del($tagsKey); // Clear old tags
 
-                        // Calculate tags to remove (Old Tags - New Tags)
-                        $tagsToRemove = array_diff($oldTags, $tags);
-
-                        foreach ($tagsToRemove as $tag) {
-                            $keysToRemoveByTag[$tag][] = $key;
-                        }
-
-                        // 1. Store the actual cache value
-                        $client->setex(
-                            $prefix . $key,
-                            $ttl,
-                            $this->serialization->serialize($value)
-                        );
-
-                        // 2. Store reverse index of tags for this key
-                        $tagsKey = $this->context->reverseIndexKey($key);
-
-                        // Use multi() for reverse index updates (same slot)
-                        $multi = $client->multi();
-                        $multi->del($tagsKey); // Clear old tags
-
-                        if (! empty($tags)) {
-                            $multi->sadd($tagsKey, ...$tags);
-                            $multi->expire($tagsKey, $ttl);
-                        }
-
-                        $multi->exec();
-
-                        // Collect keys for batch tag update (New Tags)
-                        foreach ($tags as $tag) {
-                            $keysByNewTag[$tag][] = $key;
-                        }
+                    if (! empty($tags)) {
+                        $multi->sadd($tagsKey, ...$tags);
+                        $multi->expire($tagsKey, $ttl);
                     }
 
-                    // 3. Batch remove from old tags
-                    foreach ($keysToRemoveByTag as $tag => $keys) {
-                        $tag = (string) $tag;
-                        $client->hdel($this->context->tagHashKey($tag), ...$keys);
-                    }
+                    $multi->exec();
 
-                    // 4. Batch update new tag hashes
-                    foreach ($keysByNewTag as $tag => $keys) {
-                        $tag = (string) $tag;
-                        $tagHashKey = $this->context->tagHashKey($tag);
-
-                        // Prepare HSET arguments: [key1 => 1, key2 => 1, ...]
-                        $hsetArgs = array_fill_keys($keys, StoreContext::TAG_FIELD_VALUE);
-
-                        // Use multi() for tag hash updates (same slot)
-                        $multi = $client->multi();
-                        $multi->hSet($tagHashKey, $hsetArgs);
-                        $multi->hexpire($tagHashKey, $ttl, $keys);
-                        $multi->exec();
-                    }
-
-                    // 5. Batch update Registry (Same slot, single command optimization)
-                    if (! empty($keysByNewTag)) {
-                        $zaddArgs = [];
-
-                        foreach ($keysByNewTag as $tag => $keys) {
-                            $zaddArgs[] = $expiry;
-                            $zaddArgs[] = (string) $tag;
-                        }
-
-                        $client->zadd($registryKey, ['GT'], ...$zaddArgs);
+                    // Collect keys for batch tag update (New Tags)
+                    foreach ($tags as $tag) {
+                        $keysByNewTag[$tag][] = $key;
                     }
                 }
 
-                return true;
-            });
-        } catch (Exception $e) {
-            TaggedOperationErrorHandler::handle($e);
-        }
+                // 3. Batch remove from old tags
+                foreach ($keysToRemoveByTag as $tag => $keys) {
+                    $tag = (string) $tag;
+                    $client->hdel($this->context->tagHashKey($tag), ...$keys);
+                }
+
+                // 4. Batch update new tag hashes
+                foreach ($keysByNewTag as $tag => $keys) {
+                    $tag = (string) $tag;
+                    $tagHashKey = $this->context->tagHashKey($tag);
+
+                    // Prepare HSET arguments: [key1 => 1, key2 => 1, ...]
+                    $hsetArgs = array_fill_keys($keys, StoreContext::TAG_FIELD_VALUE);
+
+                    // Use multi() for tag hash updates (same slot)
+                    $multi = $client->multi();
+                    $multi->hSet($tagHashKey, $hsetArgs);
+                    $multi->hexpire($tagHashKey, $ttl, $keys);
+                    $multi->exec();
+                }
+
+                // 5. Batch update Registry (Same slot, single command optimization)
+                if (! empty($keysByNewTag)) {
+                    $zaddArgs = [];
+
+                    foreach ($keysByNewTag as $tag => $keys) {
+                        $zaddArgs[] = $expiry;
+                        $zaddArgs[] = (string) $tag;
+                    }
+
+                    $client->zadd($registryKey, ['GT'], ...$zaddArgs);
+                }
+            }
+
+            return true;
+        });
     }
 
     /**
@@ -162,108 +156,97 @@ class PutMany
      */
     private function executeUsingPipeline(array $values, int $seconds, array $tags): bool
     {
-        try {
-            return $this->context->withConnection(function (RedisConnection $conn) use ($values, $seconds, $tags) {
-                $client = $conn->client();
-                $prefix = $this->context->prefix();
-                $registryKey = $this->context->registryKey();
-                $expiry = time() + $seconds;
-                $ttl = max(1, $seconds);
+        return $this->context->withConnection(function (RedisConnection $conn) use ($values, $seconds, $tags) {
+            $client = $conn->client();
+            $prefix = $this->context->prefix();
+            $registryKey = $this->context->registryKey();
+            $expiry = time() + $seconds;
+            $ttl = max(1, $seconds);
 
-                foreach (array_chunk($values, self::CHUNK_SIZE, true) as $chunk) {
-                    // Step 1: Retrieve old tags for all keys in the chunk
-                    $pipeline = $client->pipeline();
+            foreach (array_chunk($values, self::CHUNK_SIZE, true) as $chunk) {
+                // Step 1: Retrieve old tags for all keys in the chunk
+                $pipeline = $client->pipeline();
 
-                    foreach ($chunk as $key => $value) {
-                        $pipeline->smembers($this->context->reverseIndexKey($key));
-                    }
-
-                    $oldTagsResults = $pipeline->exec();
-
-                    // Step 2: Prepare updates
-                    $keysByNewTag = [];
-                    $keysToRemoveByTag = [];
-
-                    $pipeline = $client->pipeline();
-                    $i = 0;
-
-                    foreach ($chunk as $key => $value) {
-                        $oldTags = $oldTagsResults[$i] ?? [];
-                        $i++;
-
-                        // Calculate tags to remove (Old Tags - New Tags)
-                        $tagsToRemove = array_diff($oldTags, $tags);
-
-                        foreach ($tagsToRemove as $tag) {
-                            $keysToRemoveByTag[$tag][] = $key;
-                        }
-
-                        // 1. Store the actual cache value
-                        $pipeline->setex(
-                            $prefix . $key,
-                            $ttl,
-                            $this->serialization->serialize($value)
-                        );
-
-                        // 2. Store reverse index of tags for this key
-                        $tagsKey = $this->context->reverseIndexKey($key);
-                        $pipeline->del($tagsKey); // Clear old tags
-
-                        if (! empty($tags)) {
-                            $pipeline->sadd($tagsKey, ...$tags);
-                            $pipeline->expire($tagsKey, $ttl);
-                        }
-
-                        // Collect keys for batch tag update (New Tags)
-                        foreach ($tags as $tag) {
-                            $keysByNewTag[$tag][] = $key;
-                        }
-                    }
-
-                    // 3. Batch remove from old tags
-                    foreach ($keysToRemoveByTag as $tag => $keys) {
-                        $tag = (string) $tag;
-                        $pipeline->hdel($this->context->tagHashKey($tag), ...$keys);
-                    }
-
-                    // 4. Batch update new tag hashes
-                    foreach ($keysByNewTag as $tag => $keys) {
-                        $tag = (string) $tag;
-                        $tagHashKey = $this->context->tagHashKey($tag);
-
-                        // Prepare HSET arguments: [key1 => 1, key2 => 1, ...]
-                        $hsetArgs = array_fill_keys($keys, StoreContext::TAG_FIELD_VALUE);
-
-                        $pipeline->hSet($tagHashKey, $hsetArgs);
-                        $pipeline->hexpire($tagHashKey, $ttl, $keys);
-                    }
-
-                    // Update Registry in batch
-                    if (! empty($keysByNewTag)) {
-                        $zaddArgs = [];
-
-                        foreach ($keysByNewTag as $tag => $keys) {
-                            $zaddArgs[] = $expiry;
-                            $zaddArgs[] = (string) $tag;
-                        }
-
-                        $pipeline->zadd($registryKey, ['GT'], ...$zaddArgs);
-                    }
-
-                    $pipeline->exec();
+                foreach ($chunk as $key => $value) {
+                    $pipeline->smembers($this->context->reverseIndexKey($key));
                 }
 
-                return true;
-            });
-        } catch (Exception $e) {
-            // Ensure pipeline is discarded if an error occurs
-            try {
-                $this->context->withConnection(fn (RedisConnection $conn) => $conn->client()->discard());
-            } catch (Exception $discardException) {
-                // Ignore discard errors
+                $oldTagsResults = $pipeline->exec();
+
+                // Step 2: Prepare updates
+                $keysByNewTag = [];
+                $keysToRemoveByTag = [];
+
+                $pipeline = $client->pipeline();
+                $i = 0;
+
+                foreach ($chunk as $key => $value) {
+                    $oldTags = $oldTagsResults[$i] ?? [];
+                    $i++;
+
+                    // Calculate tags to remove (Old Tags - New Tags)
+                    $tagsToRemove = array_diff($oldTags, $tags);
+
+                    foreach ($tagsToRemove as $tag) {
+                        $keysToRemoveByTag[$tag][] = $key;
+                    }
+
+                    // 1. Store the actual cache value
+                    $pipeline->setex(
+                        $prefix . $key,
+                        $ttl,
+                        $this->serialization->serialize($value)
+                    );
+
+                    // 2. Store reverse index of tags for this key
+                    $tagsKey = $this->context->reverseIndexKey($key);
+                    $pipeline->del($tagsKey); // Clear old tags
+
+                    if (! empty($tags)) {
+                        $pipeline->sadd($tagsKey, ...$tags);
+                        $pipeline->expire($tagsKey, $ttl);
+                    }
+
+                    // Collect keys for batch tag update (New Tags)
+                    foreach ($tags as $tag) {
+                        $keysByNewTag[$tag][] = $key;
+                    }
+                }
+
+                // 3. Batch remove from old tags
+                foreach ($keysToRemoveByTag as $tag => $keys) {
+                    $tag = (string) $tag;
+                    $pipeline->hdel($this->context->tagHashKey($tag), ...$keys);
+                }
+
+                // 4. Batch update new tag hashes
+                foreach ($keysByNewTag as $tag => $keys) {
+                    $tag = (string) $tag;
+                    $tagHashKey = $this->context->tagHashKey($tag);
+
+                    // Prepare HSET arguments: [key1 => 1, key2 => 1, ...]
+                    $hsetArgs = array_fill_keys($keys, StoreContext::TAG_FIELD_VALUE);
+
+                    $pipeline->hSet($tagHashKey, $hsetArgs);
+                    $pipeline->hexpire($tagHashKey, $ttl, $keys);
+                }
+
+                // Update Registry in batch
+                if (! empty($keysByNewTag)) {
+                    $zaddArgs = [];
+
+                    foreach ($keysByNewTag as $tag => $keys) {
+                        $zaddArgs[] = $expiry;
+                        $zaddArgs[] = (string) $tag;
+                    }
+
+                    $pipeline->zadd($registryKey, ['GT'], ...$zaddArgs);
+                }
+
+                $pipeline->exec();
             }
 
-            TaggedOperationErrorHandler::handle($e);
-        }
+            return true;
+        });
     }
 }

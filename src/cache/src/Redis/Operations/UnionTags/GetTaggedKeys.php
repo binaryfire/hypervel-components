@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
-use Exception;
 use Generator;
-use Hypervel\Cache\Redis\Support\TaggedOperationErrorHandler;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
@@ -42,28 +40,22 @@ class GetTaggedKeys
      */
     public function execute(string $tag, int $count = 1000): Generator
     {
-        try {
-            return $this->context->withConnection(function (RedisConnection $conn) use ($tag, $count) {
-                $client = $conn->client();
-                $tagKey = $this->context->tagHashKey($tag);
+        return $this->context->withConnection(function (RedisConnection $conn) use ($tag, $count) {
+            $client = $conn->client();
+            $tagKey = $this->context->tagHashKey($tag);
 
-                // For small hashes, just get all at once
-                $size = $client->hlen($tagKey);
+            // For small hashes, just get all at once
+            $size = $client->hlen($tagKey);
 
-                if ($size <= $this->scanThreshold) {
-                    $fields = $client->hkeys($tagKey);
+            if ($size <= $this->scanThreshold) {
+                $fields = $client->hkeys($tagKey);
 
-                    return $this->arrayToGenerator($fields ?: []);
-                }
+                return $this->arrayToGenerator($fields ?: []);
+            }
 
-                // For large hashes, use HSCAN with Generator
-                return $this->hscanGenerator($client, $tagKey, $count);
-            });
-        } catch (Exception $e) {
-            TaggedOperationErrorHandler::handle($e);
-
-            return $this->arrayToGenerator([]);
-        }
+            // For large hashes, use HSCAN with Generator
+            return $this->hscanGenerator($client, $tagKey, $count);
+        });
     }
 
     /**

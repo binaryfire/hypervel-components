@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache\Redis\Operations\UnionTags;
 
-use Exception;
-use Hypervel\Cache\Redis\Support\TaggedOperationErrorHandler;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
@@ -51,74 +49,70 @@ class Increment
      */
     private function executeCluster(string $key, int $value, array $tags): int|bool
     {
-        try {
-            return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $tags) {
-                $client = $conn->client();
-                $prefix = $this->context->prefix();
+        return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $tags) {
+            $client = $conn->client();
+            $prefix = $this->context->prefix();
 
-                // 1. Increment and Get TTL (Same slot, so we can use multi)
+            // 1. Increment and Get TTL (Same slot, so we can use multi)
+            $multi = $client->multi();
+            $multi->incrBy($prefix . $key, $value);
+            $multi->ttl($prefix . $key);
+            [$newValue, $ttl] = $multi->exec();
+
+            $tagsKey = $this->context->reverseIndexKey($key);
+            $oldTags = $client->smembers($tagsKey);
+
+            // Add to tags with expiration if the key has TTL
+            if (! empty($tags)) {
+                // 2. Update Reverse Index (Same slot, so we can use multi)
                 $multi = $client->multi();
-                $multi->incrBy($prefix . $key, $value);
-                $multi->ttl($prefix . $key);
-                [$newValue, $ttl] = $multi->exec();
+                $multi->del($tagsKey);
+                $multi->sadd($tagsKey, ...$tags);
 
-                $tagsKey = $this->context->reverseIndexKey($key);
-                $oldTags = $client->smembers($tagsKey);
-
-                // Add to tags with expiration if the key has TTL
-                if (! empty($tags)) {
-                    // 2. Update Reverse Index (Same slot, so we can use multi)
-                    $multi = $client->multi();
-                    $multi->del($tagsKey);
-                    $multi->sadd($tagsKey, ...$tags);
-
-                    if ($ttl > 0) {
-                        $multi->expire($tagsKey, $ttl);
-                    }
-
-                    $multi->exec();
-
-                    // Remove item from tags it no longer belongs to
-                    $tagsToRemove = array_diff($oldTags, $tags);
-
-                    foreach ($tagsToRemove as $tag) {
-                        $tag = (string) $tag;
-                        $client->hdel($this->context->tagHashKey($tag), $key);
-                    }
-
-                    // Calculate expiry for Registry
-                    $expiry = ($ttl > 0) ? (time() + $ttl) : StoreContext::MAX_EXPIRY;
-                    $registryKey = $this->context->registryKey();
-
-                    // 3. Update Tag Hashes (Cross-slot, must be sequential)
-                    foreach ($tags as $tag) {
-                        $tag = (string) $tag;
-                        $tagHashKey = $this->context->tagHashKey($tag);
-
-                        if ($ttl > 0) {
-                            // Use HSETEX for atomic operation
-                            $client->hsetex($tagHashKey, [$key => StoreContext::TAG_FIELD_VALUE], ['EX' => $ttl]);
-                        } else {
-                            $client->hset($tagHashKey, $key, StoreContext::TAG_FIELD_VALUE);
-                        }
-                    }
-
-                    // 4. Update Registry (Same slot, single command optimization)
-                    $zaddArgs = [];
-
-                    foreach ($tags as $tag) {
-                        $zaddArgs[] = $expiry;
-                        $zaddArgs[] = (string) $tag;
-                    }
-
-                    $client->zadd($registryKey, ['GT'], ...$zaddArgs);
+                if ($ttl > 0) {
+                    $multi->expire($tagsKey, $ttl);
                 }
 
-                return $newValue;
-            });
-        } catch (Exception $e) {
-            TaggedOperationErrorHandler::handle($e);
-        }
+                $multi->exec();
+
+                // Remove item from tags it no longer belongs to
+                $tagsToRemove = array_diff($oldTags, $tags);
+
+                foreach ($tagsToRemove as $tag) {
+                    $tag = (string) $tag;
+                    $client->hdel($this->context->tagHashKey($tag), $key);
+                }
+
+                // Calculate expiry for Registry
+                $expiry = ($ttl > 0) ? (time() + $ttl) : StoreContext::MAX_EXPIRY;
+                $registryKey = $this->context->registryKey();
+
+                // 3. Update Tag Hashes (Cross-slot, must be sequential)
+                foreach ($tags as $tag) {
+                    $tag = (string) $tag;
+                    $tagHashKey = $this->context->tagHashKey($tag);
+
+                    if ($ttl > 0) {
+                        // Use HSETEX for atomic operation
+                        $client->hsetex($tagHashKey, [$key => StoreContext::TAG_FIELD_VALUE], ['EX' => $ttl]);
+                    } else {
+                        $client->hset($tagHashKey, $key, StoreContext::TAG_FIELD_VALUE);
+                    }
+                }
+
+                // 4. Update Registry (Same slot, single command optimization)
+                $zaddArgs = [];
+
+                foreach ($tags as $tag) {
+                    $zaddArgs[] = $expiry;
+                    $zaddArgs[] = (string) $tag;
+                }
+
+                $client->zadd($registryKey, ['GT'], ...$zaddArgs);
+            }
+
+            return $newValue;
+        });
     }
 
     /**
@@ -126,12 +120,11 @@ class Increment
      */
     private function executeUsingLua(string $key, int $value, array $tags): int|bool
     {
-        try {
-            return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $tags) {
-                $client = $conn->client();
-                $prefix = $this->context->prefix();
+        return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $tags) {
+            $client = $conn->client();
+            $prefix = $this->context->prefix();
 
-                $script = <<<'LUA'
+            $script = <<<'LUA'
                 local key = KEYS[1]
                 local tagsKey = KEYS[2]
                 local val = tonumber(ARGV[1])
@@ -194,30 +187,27 @@ class Increment
                 return newValue
 LUA;
 
-                $args = [
-                    $prefix . $key,                        // KEYS[1]
-                    $this->context->reverseIndexKey($key), // KEYS[2]
-                    $value,                                // ARGV[1]
-                    $this->context->fullTagPrefix(),       // ARGV[2]
-                    $this->context->fullRegistryKey(),     // ARGV[3]
-                    time(),                                // ARGV[4]
-                    $key,                                  // ARGV[5]
-                    $this->context->tagHashSuffix(),       // ARGV[6]
-                    ...$tags,                               // ARGV[7...]
-                ];
+            $args = [
+                $prefix . $key,                        // KEYS[1]
+                $this->context->reverseIndexKey($key), // KEYS[2]
+                $value,                                // ARGV[1]
+                $this->context->fullTagPrefix(),       // ARGV[2]
+                $this->context->fullRegistryKey(),     // ARGV[3]
+                time(),                                // ARGV[4]
+                $key,                                  // ARGV[5]
+                $this->context->tagHashSuffix(),       // ARGV[6]
+                ...$tags,                               // ARGV[7...]
+            ];
 
-                $scriptHash = sha1($script);
-                $result = $client->evalSha($scriptHash, $args, 2);
+            $scriptHash = sha1($script);
+            $result = $client->evalSha($scriptHash, $args, 2);
 
-                // evalSha returns false if script not loaded (NOSCRIPT), fall back to eval
-                if ($result === false) {
-                    return $client->eval($script, $args, 2);
-                }
+            // evalSha returns false if script not loaded (NOSCRIPT), fall back to eval
+            if ($result === false) {
+                return $client->eval($script, $args, 2);
+            }
 
-                return $result;
-            });
-        } catch (Exception $e) {
-            TaggedOperationErrorHandler::handle($e);
-        }
+            return $result;
+        });
     }
 }
