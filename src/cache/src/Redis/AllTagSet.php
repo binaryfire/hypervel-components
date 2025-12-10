@@ -35,14 +35,6 @@ class AllTagSet extends TagSet
     }
 
     /**
-     * Remove the stale entries from the tag set.
-     */
-    public function flushStaleEntries(): void
-    {
-        $this->store->allTagOps()->flushStaleEntries()->execute($this->tagIds());
-    }
-
-    /**
      * Flush the tag from the cache.
      */
     public function flushTag(string $name): string
@@ -80,15 +72,5 @@ class AllTagSet extends TagSet
     public function tagKey(string $name): string
     {
         return $this->store->getContext()->tagId($name);
-    }
-
-    /**
-     * Get an array of tag identifiers for all of the tags in the set.
-     *
-     * @return array<string>
-     */
-    public function tagIds(): array
-    {
-        return parent::tagIds();
     }
 }

@@ -179,7 +179,7 @@ class AllTaggedCache extends TaggedCache
      */
     public function flushStale(): bool
     {
-        $this->tags->flushStaleEntries();
+        $this->store->allTagOps()->flushStale()->execute($this->tags->tagIds());
 
         return true;
     }

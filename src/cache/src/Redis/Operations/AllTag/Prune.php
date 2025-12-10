@@ -7,6 +7,8 @@ namespace Hypervel\Cache\Redis\Operations\AllTag;
 use Hypervel\Cache\Redis\Query\SafeScan;
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
+use Redis;
+use RedisCluster;
 
 /**
  * Prune stale and orphaned entries from all tag sorted sets.
@@ -45,7 +47,9 @@ class Prune
      */
     public function execute(int $scanCount = self::DEFAULT_SCAN_COUNT): array
     {
-        return $this->context->withConnection(function (RedisConnection $conn) use ($scanCount) {
+        $isCluster = $this->context->isCluster();
+
+        return $this->context->withConnection(function (RedisConnection $conn) use ($scanCount, $isCluster) {
             $client = $conn->client();
             $pattern = $this->context->tagScanPattern();
             $optPrefix = $this->context->optPrefix();
@@ -71,7 +75,7 @@ class Prune
                 $stats['stale_entries_removed'] += is_int($staleRemoved) ? $staleRemoved : 0;
 
                 // Step 2: Remove orphaned entries (cache key doesn't exist)
-                $orphanResult = $this->removeOrphanedEntries($client, $tagKey, $prefix, $scanCount);
+                $orphanResult = $this->removeOrphanedEntries($client, $tagKey, $prefix, $scanCount, $isCluster);
                 $stats['entries_checked'] += $orphanResult['checked'];
                 $stats['orphans_removed'] += $orphanResult['removed'];
 
@@ -92,17 +96,20 @@ class Prune
     /**
      * Remove orphaned entries from a sorted set where the cache key no longer exists.
      *
-     * Uses multi() which works for both standard Redis (pipelined) and cluster mode
-     * (groups commands by node, sends sequentially, aggregates results).
-     *
-     * @param \Redis|\RedisCluster $client
+     * @param Redis|RedisCluster $client
      * @param string $tagKey The tag sorted set key (without OPT_PREFIX, phpredis auto-adds it)
      * @param string $prefix The cache prefix (e.g., "cache:")
      * @param int $scanCount Number of members per ZSCAN iteration
+     * @param bool $isCluster Whether we're connected to a Redis Cluster
      * @return array{checked: int, removed: int}
      */
-    private function removeOrphanedEntries(mixed $client, string $tagKey, string $prefix, int $scanCount): array
-    {
+    private function removeOrphanedEntries(
+        Redis|RedisCluster $client,
+        string $tagKey,
+        string $prefix,
+        int $scanCount,
+        bool $isCluster,
+    ): array {
         $checked = 0;
         $removed = 0;
 
@@ -123,22 +130,22 @@ class Prune
             $memberKeys = array_keys($members);
             $checked += count($memberKeys);
 
-            // Use multi() for EXISTS checks - works in both standard and cluster mode
-            // In standard mode: acts like pipeline (batched)
-            // In cluster mode: groups by node, sends sequentially, aggregates results
-            $multi = $client->multi();
+            // Check which keys exist:
+            // - Standard Redis: pipeline() batches commands with less overhead
+            // - Cluster: multi() handles cross-slot commands (pipeline not supported)
+            $batch = $isCluster ? $client->multi() : $client->pipeline();
 
             foreach ($memberKeys as $key) {
-                $multi->exists($prefix . $key);
+                $batch->exists($prefix . $key);
             }
 
-            $existsResults = $multi->exec();
+            $existsResults = $batch->exec();
 
             // Collect orphaned members (cache key doesn't exist)
             $orphanedMembers = [];
 
             foreach ($memberKeys as $index => $key) {
-                // EXISTS returns int (0 or 1) in multi mode
+                // EXISTS returns int (0 or 1)
                 if (empty($existsResults[$index])) {
                     $orphanedMembers[] = $key;
                 }

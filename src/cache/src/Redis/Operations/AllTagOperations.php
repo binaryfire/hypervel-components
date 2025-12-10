@@ -8,7 +8,7 @@ use Hypervel\Cache\Redis\Operations\AllTag\Add;
 use Hypervel\Cache\Redis\Operations\AllTag\AddEntry;
 use Hypervel\Cache\Redis\Operations\AllTag\Decrement;
 use Hypervel\Cache\Redis\Operations\AllTag\Flush;
-use Hypervel\Cache\Redis\Operations\AllTag\FlushStaleEntries;
+use Hypervel\Cache\Redis\Operations\AllTag\FlushStale;
 use Hypervel\Cache\Redis\Operations\AllTag\Forever;
 use Hypervel\Cache\Redis\Operations\AllTag\GetEntries;
 use Hypervel\Cache\Redis\Operations\AllTag\Increment;
@@ -46,7 +46,7 @@ class AllTagOperations
 
     private ?GetEntries $getEntries = null;
 
-    private ?FlushStaleEntries $flushStaleEntries = null;
+    private ?FlushStale $flushStale = null;
 
     private ?Flush $flush = null;
 
@@ -124,11 +124,11 @@ class AllTagOperations
     }
 
     /**
-     * Get the FlushStaleEntries operation for removing expired entries from tag sorted sets.
+     * Get the FlushStale operation for removing expired entries from tag sorted sets.
      */
-    public function flushStaleEntries(): FlushStaleEntries
+    public function flushStale(): FlushStale
     {
-        return $this->flushStaleEntries ??= new FlushStaleEntries($this->context);
+        return $this->flushStale ??= new FlushStale($this->context);
     }
 
     /**
@@ -165,7 +165,7 @@ class AllTagOperations
         $this->decrement = null;
         $this->addEntry = null;
         $this->getEntries = null;
-        $this->flushStaleEntries = null;
+        $this->flushStale = null;
         $this->flush = null;
         $this->prune = null;
     }

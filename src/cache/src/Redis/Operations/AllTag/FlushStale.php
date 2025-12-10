@@ -8,15 +8,15 @@ use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
 
 /**
- * Flushes stale entries from all tag sorted sets.
+ * Flushes stale entries from tag sorted sets.
  *
  * Uses ZREMRANGEBYSCORE to remove entries whose TTL timestamps have passed.
- * This is a cleanup operation that should be run periodically to prevent
- * memory leaks from expired cache key references.
+ * This is a cleanup operation that can be called on specific tags via
+ * Cache::tags(['users'])->flushStale() or globally via the prune command.
  *
  * Entries with score -1 (forever items) are never flushed.
  */
-class FlushStaleEntries
+class FlushStale
 {
     public function __construct(
         private readonly StoreContext $context,
@@ -74,10 +74,13 @@ class FlushStaleEntries
     }
 
     /**
-     * Execute using sequential commands for Redis Cluster.
+     * Execute using multi() for Redis Cluster.
      *
-     * Each tag sorted set may be in a different slot, so we must
-     * execute ZREMRANGEBYSCORE commands sequentially rather than in a pipeline.
+     * RedisCluster doesn't support pipeline(), but multi() works across slots:
+     * - Tracks which nodes receive commands
+     * - Sends MULTI to each node lazily (on first key for that node)
+     * - Executes EXEC on all involved nodes
+     * - Aggregates results into a single array
      */
     private function executeCluster(array $tagIds): void
     {
@@ -86,13 +89,17 @@ class FlushStaleEntries
             $prefix = $this->context->prefix();
             $timestamp = (string) now()->getTimestamp();
 
+            $multi = $client->multi();
+
             foreach ($tagIds as $tagId) {
-                $client->zRemRangeByScore(
+                $multi->zRemRangeByScore(
                     $prefix . $tagId,
                     '0',
                     $timestamp
                 );
             }
+
+            $multi->exec();
         });
     }
 }
