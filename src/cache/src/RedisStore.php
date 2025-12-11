@@ -25,6 +25,8 @@ use Hypervel\Cache\Redis\Operations\AnyTagOperations;
 use Hypervel\Cache\Redis\Operations\Many;
 use Hypervel\Cache\Redis\Operations\Put;
 use Hypervel\Cache\Redis\Operations\PutMany;
+use Hypervel\Cache\Redis\Operations\Remember;
+use Hypervel\Cache\Redis\Operations\RememberForever;
 use Hypervel\Cache\Redis\Support\Serialization;
 use Hypervel\Cache\Redis\Support\StoreContext;
 
@@ -89,6 +91,10 @@ class RedisStore extends TaggableStore implements LockProvider
     private ?Decrement $decrementOperation = null;
 
     private ?Flush $flushOperation = null;
+
+    private ?Remember $rememberOperation = null;
+
+    private ?RememberForever $rememberForeverOperation = null;
 
     /**
      * Cached tag operation containers.
@@ -207,6 +213,33 @@ class RedisStore extends TaggableStore implements LockProvider
     public function flush(): bool
     {
         return $this->getFlushOperation()->execute();
+    }
+
+    /**
+     * Get an item from the cache, or execute the given Closure and store the result.
+     *
+     * Optimized to use a single connection for both GET and SET operations,
+     * avoiding double pool overhead for cache misses.
+     *
+     * @param \Closure(): mixed $callback
+     */
+    public function remember(string $key, int $seconds, \Closure $callback): mixed
+    {
+        return $this->getRememberOperation()->execute($key, $seconds, $callback);
+    }
+
+    /**
+     * Get an item from the cache, or execute the given Closure and store the result forever.
+     *
+     * Optimized to use a single connection for both GET and SET operations,
+     * avoiding double pool overhead for cache misses.
+     *
+     * @param \Closure(): mixed $callback
+     * @return array{0: mixed, 1: bool} Tuple of [value, wasHit]
+     */
+    public function rememberForever(string $key, \Closure $callback): array
+    {
+        return $this->getRememberForeverOperation()->execute($key, $callback);
     }
 
     /**
@@ -409,6 +442,8 @@ class RedisStore extends TaggableStore implements LockProvider
         $this->incrementOperation = null;
         $this->decrementOperation = null;
         $this->flushOperation = null;
+        $this->rememberOperation = null;
+        $this->rememberForeverOperation = null;
 
         // Tag operation containers
         $this->anyTagOperations = null;
@@ -481,5 +516,21 @@ class RedisStore extends TaggableStore implements LockProvider
     private function getFlushOperation(): Flush
     {
         return $this->flushOperation ??= new Flush($this->getContext());
+    }
+
+    private function getRememberOperation(): Remember
+    {
+        return $this->rememberOperation ??= new Remember(
+            $this->getContext(),
+            $this->getSerialization()
+        );
+    }
+
+    private function getRememberForeverOperation(): RememberForever
+    {
+        return $this->rememberForeverOperation ??= new RememberForever(
+            $this->getContext(),
+            $this->getSerialization()
+        );
     }
 }

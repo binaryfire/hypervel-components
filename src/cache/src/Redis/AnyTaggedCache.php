@@ -238,6 +238,9 @@ class AnyTaggedCache extends TaggedCache
     /**
      * Get an item from the cache, or execute the given Closure and store the result.
      *
+     * Optimized to use a single connection for both GET and PUT operations,
+     * avoiding double pool overhead for cache misses.
+     *
      * @template TCacheValue
      *
      * @param Closure(): TCacheValue $callback
@@ -245,27 +248,39 @@ class AnyTaggedCache extends TaggedCache
      */
     public function remember(string $key, null|DateInterval|DateTimeInterface|int $ttl, Closure $callback): mixed
     {
-        // Bypass our own get() which throws an exception
-        // Access the store directly to check for existence
-        $value = $this->store->get($this->itemKey($key));
-
-        if ($value !== null) {
-            $this->event(new CacheHit($key, $value));
-
-            return $value;
+        if ($ttl === null) {
+            return $this->rememberForever($key, $callback);
         }
 
-        $this->event(new CacheMissed($key));
+        $seconds = $this->getSeconds($ttl);
 
-        $value = $callback();
+        if ($seconds <= 0) {
+            // Invalid TTL, just execute callback without caching
+            return $callback();
+        }
 
-        $this->put($key, $value, $ttl);
+        [$value, $wasHit] = $this->store->anyTagOps()->remember()->execute(
+            $key,
+            $seconds,
+            $callback,
+            $this->tags->getNames()
+        );
+
+        if ($wasHit) {
+            $this->event(new CacheHit($key, $value));
+        } else {
+            $this->event(new CacheMissed($key));
+            $this->event(new KeyWritten($key, $value, $seconds));
+        }
 
         return $value;
     }
 
     /**
      * Get an item from the cache, or execute the given Closure and store the result forever.
+     *
+     * Optimized to use a single connection for both GET and SET operations,
+     * avoiding double pool overhead for cache misses.
      *
      * @template TCacheValue
      *
@@ -274,20 +289,18 @@ class AnyTaggedCache extends TaggedCache
      */
     public function rememberForever(string $key, Closure $callback): mixed
     {
-        // Bypass our own get() which throws an exception
-        $value = $this->store->get($this->itemKey($key));
+        [$value, $wasHit] = $this->store->anyTagOps()->rememberForever()->execute(
+            $key,
+            $callback,
+            $this->tags->getNames()
+        );
 
-        if ($value !== null) {
+        if ($wasHit) {
             $this->event(new CacheHit($key, $value));
-
-            return $value;
+        } else {
+            $this->event(new CacheMissed($key));
+            $this->event(new KeyWritten($key, $value));
         }
-
-        $this->event(new CacheMissed($key));
-
-        $value = $callback();
-
-        $this->forever($key, $value);
 
         return $value;
     }

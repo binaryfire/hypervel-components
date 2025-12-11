@@ -455,9 +455,10 @@ class AnyTaggedCacheTest extends TestCase
     public function testRememberRetrievesExistingValueFromStore(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        // The Get operation calls $connection->get()
-        $connection->shouldReceive('get')
+        // The Remember operation calls $client->get() directly
+        $client->shouldReceive('get')
             ->once()
             ->with('prefix:mykey')
             ->andReturn(serialize('cached_value'));
@@ -476,13 +477,13 @@ class AnyTaggedCacheTest extends TestCase
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
 
-        // Store returns null (miss)
-        $connection->shouldReceive('get')
+        // Client returns null (miss) - Remember operation uses client->get() directly
+        $client->shouldReceive('get')
             ->once()
             ->with('prefix:mykey')
             ->andReturnNull();
 
-        // Should store the value with tags
+        // Should store the value with tags via Lua script
         $client->shouldReceive('evalSha')
             ->once()
             ->andReturn(true);
@@ -505,9 +506,10 @@ class AnyTaggedCacheTest extends TestCase
     public function testRememberForeverRetrievesExistingValueFromStore(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        // Store returns existing value
-        $connection->shouldReceive('get')
+        // RememberForever operation uses $client->get() directly
+        $client->shouldReceive('get')
             ->once()
             ->with('prefix:mykey')
             ->andReturn(serialize('cached_value'));
@@ -526,13 +528,13 @@ class AnyTaggedCacheTest extends TestCase
         $connection = $this->mockConnection();
         $client = $connection->_mockClient;
 
-        // Store returns null (miss)
-        $connection->shouldReceive('get')
+        // RememberForever operation uses $client->get() directly - returns null (miss)
+        $client->shouldReceive('get')
             ->once()
             ->with('prefix:mykey')
             ->andReturnNull();
 
-        // Should store the value forever with tags
+        // Should store the value forever with tags using Lua script
         $client->shouldReceive('evalSha')
             ->once()
             ->andReturn(true);
@@ -561,9 +563,10 @@ class AnyTaggedCacheTest extends TestCase
     public function testItemKeyReturnsKeyUnchanged(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
         // In any mode, keys are NOT namespaced by tags
-        $connection->shouldReceive('get')
+        $client->shouldReceive('get')
             ->once()
             ->with('prefix:mykey') // Should NOT have tag namespace prefix
             ->andReturn(serialize('value'));
@@ -620,8 +623,10 @@ class AnyTaggedCacheTest extends TestCase
     public function testRememberPropagatesExceptionFromCallback(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('get')
+        // Client returns null (cache miss) - callback will be executed
+        $client->shouldReceive('get')
             ->once()
             ->with('prefix:mykey')
             ->andReturnNull();
@@ -641,8 +646,10 @@ class AnyTaggedCacheTest extends TestCase
     public function testRememberForeverPropagatesExceptionFromCallback(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        $connection->shouldReceive('get')
+        // Client returns null (cache miss) - callback will be executed
+        $client->shouldReceive('get')
             ->once()
             ->with('prefix:mykey')
             ->andReturnNull();
@@ -662,9 +669,10 @@ class AnyTaggedCacheTest extends TestCase
     public function testRememberDoesNotCallCallbackWhenValueExists(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
-        // Store returns existing value
-        $connection->shouldReceive('get')
+        // Client returns existing value (cache hit)
+        $client->shouldReceive('get')
             ->once()
             ->with('prefix:mykey')
             ->andReturn(serialize('cached_value'));

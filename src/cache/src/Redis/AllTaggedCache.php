@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache\Redis;
 
+use Closure;
 use DateInterval;
 use DateTimeInterface;
 use Hypervel\Cache\Contracts\Store;
+use Hypervel\Cache\Events\CacheHit;
+use Hypervel\Cache\Events\CacheMissed;
 use Hypervel\Cache\Events\KeyWritten;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Cache\TaggedCache;
@@ -182,6 +185,77 @@ class AllTaggedCache extends TaggedCache
         $this->store->allTagOps()->flushStale()->execute($this->tags->tagIds());
 
         return true;
+    }
+
+    /**
+     * Get an item from the cache, or execute the given Closure and store the result.
+     *
+     * Optimized to use a single connection for both GET and PUT operations,
+     * avoiding double pool overhead for cache misses. Also ensures tag tracking
+     * entries are properly created (which the parent implementation bypasses).
+     *
+     * @template TCacheValue
+     *
+     * @param Closure(): TCacheValue $callback
+     * @return TCacheValue
+     */
+    public function remember(string $key, null|DateInterval|DateTimeInterface|int $ttl, Closure $callback): mixed
+    {
+        if ($ttl === null) {
+            return $this->rememberForever($key, $callback);
+        }
+
+        $seconds = $this->getSeconds($ttl);
+
+        if ($seconds <= 0) {
+            // Invalid TTL, just execute callback without caching
+            return $callback();
+        }
+
+        [$value, $wasHit] = $this->store->allTagOps()->remember()->execute(
+            $this->itemKey($key),
+            $seconds,
+            $callback,
+            $this->tags->tagIds()
+        );
+
+        if ($wasHit) {
+            $this->event(new CacheHit($key, $value));
+        } else {
+            $this->event(new CacheMissed($key));
+            $this->event(new KeyWritten($key, $value, $seconds));
+        }
+
+        return $value;
+    }
+
+    /**
+     * Get an item from the cache, or execute the given Closure and store the result forever.
+     *
+     * Optimized to use a single connection for both GET and SET operations,
+     * avoiding double pool overhead for cache misses.
+     *
+     * @template TCacheValue
+     *
+     * @param Closure(): TCacheValue $callback
+     * @return TCacheValue
+     */
+    public function rememberForever(string $key, Closure $callback): mixed
+    {
+        [$value, $wasHit] = $this->store->allTagOps()->rememberForever()->execute(
+            $this->itemKey($key),
+            $callback,
+            $this->tags->tagIds()
+        );
+
+        if ($wasHit) {
+            $this->event(new CacheHit($key, $value));
+        } else {
+            $this->event(new CacheMissed($key));
+            $this->event(new KeyWritten($key, $value));
+        }
+
+        return $value;
     }
 
     /**
