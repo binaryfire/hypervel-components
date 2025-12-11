@@ -36,8 +36,10 @@ class ReadPerformanceScenario implements ScenarioInterface
         // Seed data
         $bar = $ctx->createProgressBar($items);
 
+        $tag = $ctx->prefixed('read:tag');
+
         for ($i = 0; $i < $items; $i++) {
-            $store->tags(['read:tag'])->put($ctx->key("read:{$i}"), 'value', 3600);
+            $store->tags([$tag])->put($ctx->prefixed("read:{$i}"), 'value', 3600);
 
             if ($i % $chunkSize === 0) {
                 $bar->advance($chunkSize);
@@ -58,9 +60,9 @@ class ReadPerformanceScenario implements ScenarioInterface
 
         for ($i = 0; $i < $items; $i++) {
             if ($isAnyMode) {
-                $store->get($ctx->key("read:{$i}"));
+                $store->get($ctx->prefixed("read:{$i}"));
             } else {
-                $store->tags(['read:tag'])->get($ctx->key("read:{$i}"));
+                $store->tags([$tag])->get($ctx->prefixed("read:{$i}"));
             }
 
             if ($i % $chunkSize === 0) {

@@ -30,7 +30,7 @@ class DeepTaggingScenario implements ScenarioInterface
         $ctx->line("  Running Deep Tagging Scenario (1 tag, {$items} items)...");
         $ctx->cleanup();
 
-        $tag = 'deep:tag';
+        $tag = $ctx->prefixed('deep:tag');
 
         // 1. Write
         $start = hrtime(true);
@@ -40,7 +40,7 @@ class DeepTaggingScenario implements ScenarioInterface
         $chunkSize = 100;
 
         for ($i = 0; $i < $items; $i++) {
-            $store->tags([$tag])->put($ctx->key("deep:{$i}"), 'value', 3600);
+            $store->tags([$tag])->put($ctx->prefixed("deep:{$i}"), 'value', 3600);
 
             if ($i % $chunkSize === 0) {
                 $bar->advance($chunkSize);

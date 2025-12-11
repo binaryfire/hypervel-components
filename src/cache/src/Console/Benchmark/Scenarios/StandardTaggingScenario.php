@@ -36,7 +36,7 @@ class StandardTaggingScenario implements ScenarioInterface
         $tags = [];
 
         for ($i = 0; $i < $tagsPerItem; $i++) {
-            $tags[] = "tag:{$i}";
+            $tags[] = $ctx->prefixed("tag:{$i}");
         }
 
         // 1. Write
@@ -48,7 +48,7 @@ class StandardTaggingScenario implements ScenarioInterface
         $chunkSize = 100;
 
         for ($i = 0; $i < $items; $i++) {
-            $store->tags($tags)->put($ctx->key("item:{$i}"), 'value', 3600);
+            $store->tags($tags)->put($ctx->prefixed("item:{$i}"), 'value', 3600);
 
             if ($i % $chunkSize === 0) {
                 $bar->advance($chunkSize);
@@ -75,7 +75,7 @@ class StandardTaggingScenario implements ScenarioInterface
         $bar = $ctx->createProgressBar($items);
 
         for ($i = 0; $i < $items; $i++) {
-            $store->tags($tags)->add($ctx->key("item:add:{$i}"), 'value', 3600);
+            $store->tags($tags)->add($ctx->prefixed("item:add:{$i}"), 'value', 3600);
 
             if ($i % $chunkSize === 0) {
                 $bar->advance($chunkSize);
@@ -99,7 +99,7 @@ class StandardTaggingScenario implements ScenarioInterface
         $buffer = [];
 
         for ($i = 0; $i < $items; $i++) {
-            $buffer[$ctx->key("item:bulk:{$i}")] = 'value';
+            $buffer[$ctx->prefixed("item:bulk:{$i}")] = 'value';
 
             if (count($buffer) >= $bulkChunkSize) {
                 $store->tags($tags)->putMany($buffer, 3600);

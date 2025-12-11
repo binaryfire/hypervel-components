@@ -38,7 +38,7 @@ class HeavyTaggingScenario implements ScenarioInterface
         $tags = [];
 
         for ($i = 0; $i < $tagsPerItem; $i++) {
-            $tags[] = "heavy:tag:{$i}";
+            $tags[] = $ctx->prefixed("heavy:tag:{$i}");
         }
 
         // 1. Write
@@ -49,7 +49,7 @@ class HeavyTaggingScenario implements ScenarioInterface
         $chunkSize = 10;
 
         for ($i = 0; $i < $adjustedItems; $i++) {
-            $store->tags($tags)->put($ctx->key("heavy:{$i}"), 'value', 3600);
+            $store->tags($tags)->put($ctx->prefixed("heavy:{$i}"), 'value', 3600);
 
             if ($i % $chunkSize === 0) {
                 $bar->advance($chunkSize);

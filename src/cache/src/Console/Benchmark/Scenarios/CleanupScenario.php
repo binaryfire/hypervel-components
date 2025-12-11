@@ -32,8 +32,12 @@ class CleanupScenario implements ScenarioInterface
         $ctx->line("  Running Cleanup Scenario ({$adjustedItems} items, shared tags)...");
         $ctx->cleanup();
 
-        $mainTag = 'cleanup:main';
-        $sharedTags = ['cleanup:shared:1', 'cleanup:shared:2', 'cleanup:shared:3'];
+        $mainTag = $ctx->prefixed('cleanup:main');
+        $sharedTags = [
+            $ctx->prefixed('cleanup:shared:1'),
+            $ctx->prefixed('cleanup:shared:2'),
+            $ctx->prefixed('cleanup:shared:3'),
+        ];
         $allTags = array_merge([$mainTag], $sharedTags);
 
         // 1. Write items with shared tags
@@ -41,7 +45,7 @@ class CleanupScenario implements ScenarioInterface
         $store = $ctx->getStore();
 
         for ($i = 0; $i < $adjustedItems; $i++) {
-            $store->tags($allTags)->put($ctx->key("cleanup:{$i}"), 'value', 3600);
+            $store->tags($allTags)->put($ctx->prefixed("cleanup:{$i}"), 'value', 3600);
 
             if ($i % 100 === 0) {
                 $bar->advance(100);

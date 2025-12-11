@@ -36,20 +36,21 @@ class BulkWriteScenario implements ScenarioInterface
         $start = hrtime(true);
         $bar = $ctx->createProgressBar($items);
 
+        $tag = $ctx->prefixed('bulk:tag');
         $buffer = [];
 
         for ($i = 0; $i < $items; $i++) {
-            $buffer[$ctx->key("bulk:{$i}")] = 'value';
+            $buffer[$ctx->prefixed("bulk:{$i}")] = 'value';
 
             if (count($buffer) >= $chunkSize) {
-                $store->tags(['bulk:tag'])->putMany($buffer, 3600);
+                $store->tags([$tag])->putMany($buffer, 3600);
                 $buffer = [];
                 $bar->advance($chunkSize);
             }
         }
 
         if (! empty($buffer)) {
-            $store->tags(['bulk:tag'])->putMany($buffer, 3600);
+            $store->tags([$tag])->putMany($buffer, 3600);
             $bar->advance(count($buffer));
         }
 

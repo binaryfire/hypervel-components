@@ -39,7 +39,7 @@ class NonTaggedScenario implements ScenarioInterface
         $bar = $ctx->createProgressBar($items);
 
         for ($i = 0; $i < $items; $i++) {
-            $store->put($ctx->key("nontagged:put:{$i}"), 'value', 3600);
+            $store->put($ctx->prefixed("nontagged:put:{$i}"), 'value', 3600);
 
             if ($i % $chunkSize === 0) {
                 $bar->advance($chunkSize);
@@ -59,7 +59,7 @@ class NonTaggedScenario implements ScenarioInterface
         $bar = $ctx->createProgressBar($items);
 
         for ($i = 0; $i < $items; $i++) {
-            $store->get($ctx->key("nontagged:put:{$i}"));
+            $store->get($ctx->prefixed("nontagged:put:{$i}"));
 
             if ($i % $chunkSize === 0) {
                 $bar->advance($chunkSize);
@@ -79,7 +79,7 @@ class NonTaggedScenario implements ScenarioInterface
         $bar = $ctx->createProgressBar($items);
 
         for ($i = 0; $i < $items; $i++) {
-            $store->forget($ctx->key("nontagged:put:{$i}"));
+            $store->forget($ctx->prefixed("nontagged:put:{$i}"));
 
             if ($i % $chunkSize === 0) {
                 $bar->advance($chunkSize);
@@ -101,7 +101,7 @@ class NonTaggedScenario implements ScenarioInterface
         $rememberChunk = 10;
 
         for ($i = 0; $i < $rememberItems; $i++) {
-            $store->remember($ctx->key("nontagged:remember:{$i}"), 3600, function (): string {
+            $store->remember($ctx->prefixed("nontagged:remember:{$i}"), 3600, function (): string {
                 return 'computed_value';
             });
 
@@ -126,7 +126,7 @@ class NonTaggedScenario implements ScenarioInterface
         $buffer = [];
 
         for ($i = 0; $i < $items; $i++) {
-            $buffer[$ctx->key("nontagged:bulk:{$i}")] = 'value';
+            $buffer[$ctx->prefixed("nontagged:bulk:{$i}")] = 'value';
 
             if (count($buffer) >= $bulkChunkSize) {
                 $store->putMany($buffer, 3600);
@@ -153,7 +153,7 @@ class NonTaggedScenario implements ScenarioInterface
         $bar = $ctx->createProgressBar($items);
 
         for ($i = 0; $i < $items; $i++) {
-            $store->add($ctx->key("nontagged:add:{$i}"), 'value', 3600);
+            $store->add($ctx->prefixed("nontagged:add:{$i}"), 'value', 3600);
 
             if ($i % $chunkSize === 0) {
                 $bar->advance($chunkSize);

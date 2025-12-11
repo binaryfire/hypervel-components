@@ -9,6 +9,7 @@ use Hyperf\Command\Command;
 use Hypervel\Cache\Contracts\Factory as CacheContract;
 use Hypervel\Cache\Contracts\Repository;
 use Hypervel\Cache\Exceptions\BenchmarkMemoryException;
+use Hypervel\Cache\Redis\Flush\FlushByPattern;
 use Hypervel\Cache\Redis\TagMode;
 use Hypervel\Cache\RedisStore;
 use Hypervel\Cache\Support\SystemInfo;
@@ -156,11 +157,14 @@ class BenchmarkContext
     }
 
     /**
-     * Create a key with the benchmark prefix.
+     * Get a value prefixed with the benchmark prefix.
+     *
+     * Used for both cache keys and tag names to ensure complete isolation
+     * from production data and safe cleanup.
      */
-    public function key(string $suffix): string
+    public function prefixed(string $value): string
     {
-        return self::KEY_PREFIX . $suffix;
+        return self::KEY_PREFIX . $value;
     }
 
     /**
@@ -222,7 +226,7 @@ class BenchmarkContext
      * This method uses mode-aware patterns to ensure complete cleanup:
      * 1. Flush all tagged items via $store->tags()->flush()
      * 2. Clean non-tagged benchmark keys
-     * 3. Clean any remaining tag storage structures
+     * 3. Clean any remaining tag storage structures (matching _bench: prefix)
      * 4. Run prune command to clean up orphans
      */
     public function cleanup(): void
@@ -230,25 +234,25 @@ class BenchmarkContext
         $store = $this->getStore();
         $storeInstance = $this->getStoreInstance();
 
-        // Build list of all benchmark tags
+        // Build list of all benchmark tags (all prefixed with _bench:)
         $tags = [
-            'deep:tag',
-            'read:tag',
-            'bulk:tag',
-            'cleanup:main',
-            'cleanup:shared:1',
-            'cleanup:shared:2',
-            'cleanup:shared:3',
+            $this->prefixed('deep:tag'),
+            $this->prefixed('read:tag'),
+            $this->prefixed('bulk:tag'),
+            $this->prefixed('cleanup:main'),
+            $this->prefixed('cleanup:shared:1'),
+            $this->prefixed('cleanup:shared:2'),
+            $this->prefixed('cleanup:shared:3'),
         ];
 
         // Standard tags (max 10)
         for ($i = 0; $i < 10; $i++) {
-            $tags[] = "tag:{$i}";
+            $tags[] = $this->prefixed("tag:{$i}");
         }
 
         // Heavy tags (max 60 to cover extreme scale)
         for ($i = 0; $i < 60; $i++) {
-            $tags[] = "heavy:tag:{$i}";
+            $tags[] = $this->prefixed("heavy:tag:{$i}");
         }
 
         // 1. Flush tagged items - this handles cache values, tag hashes/zsets, and registry
@@ -260,12 +264,27 @@ class BenchmarkContext
             $this->flushKeysByPattern($storeInstance, $pattern);
         }
 
-        // 3. Clean up any remaining tag storage structures (belt and suspenders)
-        // This catches any leftover tag hashes/zsets that weren't flushed
-        $tagStoragePattern = $this->getTagStoragePattern('');
+        // 3. Clean up any remaining tag storage structures matching benchmark prefix
+        $tagStoragePattern = $this->getTagStoragePattern(self::KEY_PREFIX);
         $this->flushKeysByPattern($storeInstance, $tagStoragePattern);
 
-        // 4. Run prune command to clean up any orphans
+        // 4. Any mode: clean up benchmark entries from the tag registry
+        if ($this->isAnyMode()) {
+            $context = $storeInstance->getContext();
+            $context->withConnection(function ($conn) use ($context) {
+                $registryKey = $context->registryKey();
+                $members = $conn->zRange($registryKey, 0, -1);
+                $benchMembers = array_filter(
+                    $members,
+                    fn ($m) => str_starts_with($m, self::KEY_PREFIX)
+                );
+                if (! empty($benchMembers)) {
+                    $conn->zRem($registryKey, ...$benchMembers);
+                }
+            });
+        }
+
+        // 5. Run prune command to clean up any orphans
         try {
             $this->call('cache:prune-stale-tags', ['store' => $this->storeName]);
         } catch (Exception) {
@@ -274,34 +293,14 @@ class BenchmarkContext
     }
 
     /**
-     * Flush keys by pattern using SCAN + UNLINK.
+     * Flush keys by pattern using FlushByPattern (handles OPT_PREFIX correctly).
      *
      * @param RedisStore $store The Redis store instance
-     * @param string $pattern The pattern to match (should include cache prefix)
+     * @param string $pattern The pattern to match (should include cache prefix, NOT OPT_PREFIX)
      */
     private function flushKeysByPattern(RedisStore $store, string $pattern): void
     {
-        $context = $store->getContext();
-
-        $context->withConnection(function ($conn) use ($pattern) {
-            // Access raw Redis client for scan() which requires pass-by-reference cursor
-            $client = $conn->client();
-            $cursor = null;
-
-            do {
-                // PHPRedis scan() modifies cursor by reference and returns keys array
-                /** @var array<int, string>|false $keys */
-                $keys = $client->scan($cursor, $pattern, 1000);
-
-                if ($keys === false) {
-                    break;
-                }
-
-                if ($keys !== []) {
-                    $conn->unlink(...$keys);
-                }
-                // PHPRedis modifies $cursor by reference: 0 when done, >0 to continue
-            } while ((int) $cursor > 0); // @phpstan-ignore greater.alwaysFalse (cursor modified by reference)
-        });
+        $flushByPattern = new FlushByPattern($store->getContext());
+        $flushByPattern->execute($pattern);
     }
 }
