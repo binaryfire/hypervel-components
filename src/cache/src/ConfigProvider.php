@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Hypervel\Cache;
 
-use Hypervel\Cache\Console\CacheBenchmarkCommand;
-use Hypervel\Cache\Console\CacheDoctorCommand;
 use Hypervel\Cache\Console\ClearCommand;
-use Hypervel\Cache\Console\PruneStaleTagsCommand;
+use Hypervel\Cache\Redis\Console\BenchmarkCommand;
+use Hypervel\Cache\Redis\Console\DoctorCommand;
+use Hypervel\Cache\Redis\Console\PruneStaleTagsCommand;
 use Hypervel\Cache\Contracts\Factory;
 use Hypervel\Cache\Contracts\Store;
 use Hypervel\Cache\Listeners\CreateSwooleTable;
@@ -27,9 +27,9 @@ class ConfigProvider
                 CreateTimer::class,
             ],
             'commands' => [
-                CacheBenchmarkCommand::class,
-                CacheDoctorCommand::class,
+                BenchmarkCommand::class,
                 ClearCommand::class,
+                DoctorCommand::class,
                 PruneStaleTagsCommand::class,
             ],
             'publish' => [
