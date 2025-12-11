@@ -168,17 +168,18 @@ trait MocksRedisConnections
      * This eliminates the boilerplate of manually setting up RedisCluster mocks,
      * connection mocks, pool mocks, and pool factory mocks for each cluster test.
      *
-     * Returns both the store and the cluster client mock so tests can set expectations:
+     * Returns the store, cluster client mock, and connection mock so tests can set expectations:
      * ```php
-     * [$store, $clusterClient] = $this->createClusterStore();
+     * [$store, $clusterClient, $connection] = $this->createClusterStore();
      * $clusterClient->shouldNotReceive('pipeline');
      * $clusterClient->shouldReceive('zadd')->once()->andReturn(1);
+     * $connection->shouldReceive('del')->once()->andReturn(1); // connection-level operations
      * ```
      *
      * @param string $prefix Cache key prefix
      * @param string $connectionName Redis connection name
      * @param string|null $tagMode Optional tag mode ('any' or 'all')
-     * @return array{0: RedisStore, 1: m\MockInterface} [store, clusterClient]
+     * @return array{0: RedisStore, 1: m\MockInterface, 2: m\MockInterface} [store, clusterClient, connection]
      */
     protected function createClusterStore(
         string $prefix = 'prefix:',
@@ -199,6 +200,6 @@ trait MocksRedisConnections
             $store->setTagMode($tagMode);
         }
 
-        return [$store, $clusterClient];
+        return [$store, $clusterClient, $connection];
     }
 }
