@@ -283,13 +283,6 @@ class BenchmarkContext
                 }
             });
         }
-
-        // 5. Run prune command to clean up any orphans
-        try {
-            $this->call('cache:prune-stale-tags', ['store' => $this->storeName]);
-        } catch (Exception) {
-            // Ignore if command fails
-        }
     }
 
     /**

@@ -18,30 +18,31 @@ class ResultsFormatter
     private Command $command;
 
     /**
-     * Metric display configuration.
+     * Metric display configuration grouped by category.
+     * Order here determines display order.
      *
-     * @var array<string, array{label: string, unit: string, format: string, better: string}>
+     * @var array<string, array<string, array{label: string, unit: string, format: string, better: string, scenario: string}>>
      */
-    private array $metricConfig = [
-        // Non-Tagged Operations
-        'put_rate' => ['label' => 'Non-Tagged: put()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher'],
-        'get_rate' => ['label' => 'Non-Tagged: get()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher'],
-        'forget_rate' => ['label' => 'Non-Tagged: forget()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher'],
-        'remember_rate' => ['label' => 'Non-Tagged: remember()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher'],
-        'putmany_rate' => ['label' => 'Non-Tagged: putMany()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher'],
-        'add_rate' => ['label' => 'Non-Tagged: add()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher'],
-
-        // Standard Tagging
-        'write_rate' => ['label' => 'Tagged: put()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher'],
-        'write_time' => ['label' => 'Tagged: put() Total', 'unit' => 'Seconds', 'format' => 'time', 'better' => 'lower'],
-        'flush_time' => ['label' => 'Tagged: flush()', 'unit' => 'Seconds', 'format' => 'time', 'better' => 'lower'],
-        'putmany_rate' => ['label' => 'Tagged: putMany()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher'],
-
-        // Read Performance
-        'read_rate' => ['label' => 'Tagged: get()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher'],
-
-        // Cleanup
-        'cleanup_time' => ['label' => 'Cleanup Command', 'unit' => 'Seconds', 'format' => 'time', 'better' => 'lower'],
+    private array $metricGroups = [
+        'Non-Tagged Operations' => [
+            'put_rate' => ['label' => 'put()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'nontagged'],
+            'get_rate' => ['label' => 'get()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'nontagged'],
+            'forget_rate' => ['label' => 'forget()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'nontagged'],
+            'add_rate_nontagged' => ['label' => 'add()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'nontagged', 'key' => 'add_rate'],
+            'remember_rate' => ['label' => 'remember()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'nontagged'],
+            'putmany_rate_nontagged' => ['label' => 'putMany()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'nontagged', 'key' => 'putmany_rate'],
+        ],
+        'Tagged Operations' => [
+            'write_rate' => ['label' => 'put()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'standard'],
+            'write_time' => ['label' => 'put() total', 'unit' => 'Seconds', 'format' => 'time', 'better' => 'lower', 'scenario' => 'standard'],
+            'read_rate' => ['label' => 'get()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'read'],
+            'flush_time' => ['label' => 'flush()', 'unit' => 'Seconds', 'format' => 'time', 'better' => 'lower', 'scenario' => 'standard'],
+            'add_rate_tagged' => ['label' => 'add()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'standard', 'key' => 'add_rate'],
+            'putmany_rate_tagged' => ['label' => 'putMany()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'standard', 'key' => 'putmany_rate'],
+        ],
+        'Maintenance' => [
+            'cleanup_time' => ['label' => 'Prune stale tags', 'unit' => 'Seconds', 'format' => 'time', 'better' => 'lower', 'scenario' => 'cleanup'],
+        ],
     ];
 
     /**
@@ -67,17 +68,34 @@ class ResultsFormatter
 
         $tableData = [];
 
-        foreach ($this->metricConfig as $metricKey => $config) {
-            $value = $this->findMetricValue($results, $metricKey);
+        foreach ($this->metricGroups as $groupName => $metrics) {
+            $groupHasData = false;
 
-            if ($value === null) {
-                continue;
+            foreach ($metrics as $metricId => $config) {
+                $scenario = $config['scenario'];
+                $metricKey = $config['key'] ?? $metricId;
+
+                if (! isset($results[$scenario])) {
+                    continue;
+                }
+
+                $value = $results[$scenario]->get($metricKey);
+
+                if ($value === null) {
+                    continue;
+                }
+
+                if (! $groupHasData) {
+                    // Add group header as a separator row
+                    $tableData[] = ["<fg=yellow>{$groupName}</>", ''];
+                    $groupHasData = true;
+                }
+
+                $tableData[] = [
+                    '  ' . $config['label'] . ' (' . $config['unit'] . ')',
+                    $this->formatValue($value, $config['format']),
+                ];
             }
-
-            $tableData[] = [
-                $config['label'] . ' (' . $config['unit'] . ')',
-                $this->formatValue($value, $config['format']),
-            ];
         }
 
         $this->command->table(
@@ -102,22 +120,35 @@ class ResultsFormatter
 
         $tableData = [];
 
-        foreach ($this->metricConfig as $metricKey => $config) {
-            $allValue = $this->findMetricValue($allModeResults, $metricKey);
-            $anyValue = $this->findMetricValue($anyModeResults, $metricKey);
+        foreach ($this->metricGroups as $groupName => $metrics) {
+            $groupHasData = false;
 
-            if ($allValue === null && $anyValue === null) {
-                continue;
+            foreach ($metrics as $metricId => $config) {
+                $scenario = $config['scenario'];
+                $metricKey = $config['key'] ?? $metricId;
+
+                $allValue = isset($allModeResults[$scenario]) ? $allModeResults[$scenario]->get($metricKey) : null;
+                $anyValue = isset($anyModeResults[$scenario]) ? $anyModeResults[$scenario]->get($metricKey) : null;
+
+                if ($allValue === null && $anyValue === null) {
+                    continue;
+                }
+
+                if (! $groupHasData) {
+                    // Add group header as a separator row
+                    $tableData[] = ["<fg=yellow>{$groupName}</>", '', '', ''];
+                    $groupHasData = true;
+                }
+
+                $diff = $this->calculateDiff($allValue, $anyValue, $config['better']);
+
+                $tableData[] = [
+                    '  ' . $config['label'] . ' (' . $config['unit'] . ')',
+                    $allValue !== null ? $this->formatValue($allValue, $config['format']) : 'N/A',
+                    $anyValue !== null ? $this->formatValue($anyValue, $config['format']) : 'N/A',
+                    $diff,
+                ];
             }
-
-            $diff = $this->calculateDiff($allValue, $anyValue, $config['better']);
-
-            $tableData[] = [
-                $config['label'] . ' (' . $config['unit'] . ')',
-                $allValue !== null ? $this->formatValue($allValue, $config['format']) : 'N/A',
-                $anyValue !== null ? $this->formatValue($anyValue, $config['format']) : 'N/A',
-                $diff,
-            ];
         }
 
         $this->command->table(
@@ -138,24 +169,6 @@ class ResultsFormatter
         $this->command->line('  <fg=green>Green (+%)</> = Any Mode is better');
         $this->command->line('  <fg=red>Red (-%)</> = Any Mode is worse');
         $this->command->line('  <fg=gray>For times, lower is better. For rates, higher is better.</>');
-    }
-
-    /**
-     * Find a metric value in the results.
-     *
-     * @param array<string, ScenarioResult> $results
-     */
-    private function findMetricValue(array $results, string $metricKey): ?float
-    {
-        foreach ($results as $result) {
-            $value = $result->get($metricKey);
-
-            if ($value !== null) {
-                return $value;
-            }
-        }
-
-        return null;
     }
 
     /**
