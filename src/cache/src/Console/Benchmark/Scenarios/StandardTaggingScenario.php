@@ -89,7 +89,31 @@ class StandardTaggingScenario implements ScenarioInterface
         $addTime = (hrtime(true) - $start) / 1e9;
         $addRate = $items / $addTime;
 
-        // 4. Bulk Write Performance (putMany)
+        // 4. Remember Performance (cache miss + store with tags)
+        $ctx->cleanup();
+        $ctx->line('  Testing remember() with tags...');
+        $rememberItems = min(1000, (int) ($items / 10));
+        $start = hrtime(true);
+        $bar = $ctx->createProgressBar($rememberItems);
+        $rememberChunk = 10;
+
+        for ($i = 0; $i < $rememberItems; $i++) {
+            $store->tags($tags)->remember($ctx->prefixed("item:remember:{$i}"), 3600, function (): string {
+                return 'computed_value';
+            });
+
+            if ($i % $rememberChunk === 0) {
+                $bar->advance($rememberChunk);
+            }
+        }
+
+        $bar->finish();
+        $ctx->line('');
+
+        $rememberTime = (hrtime(true) - $start) / 1e9;
+        $rememberRate = $rememberItems / $rememberTime;
+
+        // 5. Bulk Write Performance (putMany)
         $ctx->cleanup();
         $ctx->line('  Testing putMany() with tags...');
         $bulkChunkSize = 100;
@@ -124,6 +148,7 @@ class StandardTaggingScenario implements ScenarioInterface
             'write_rate' => $writeRate,
             'flush_time' => $flushTime,
             'add_rate' => $addRate,
+            'remember_rate' => $rememberRate,
             'putmany_rate' => $putManyRate,
         ]);
     }
