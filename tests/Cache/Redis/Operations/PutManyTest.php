@@ -131,4 +131,27 @@ class PutManyTest extends TestCase
         ], 60);
         $this->assertFalse($result);
     }
+
+    /**
+     * @test
+     */
+    public function testPutManyEnforcesMinimumTtlOfOne(): void
+    {
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
+        $client->shouldReceive('evalSha')->once()->andReturn(false);
+        $client->shouldReceive('eval')
+            ->once()
+            ->withArgs(function ($script, $args, $numKeys) {
+                // TTL should be 1, not 0
+                $this->assertSame(1, $args[$numKeys]); // TTL is at args[numKeys]
+                return true;
+            })
+            ->andReturn(true);
+
+        $redis = $this->createStore($connection);
+        $result = $redis->putMany(['foo' => 'bar'], 0);
+        $this->assertTrue($result);
+    }
 }

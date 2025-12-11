@@ -216,4 +216,36 @@ class ForeverTest extends TestCase
 
         $this->assertTrue($result);
     }
+
+    /**
+     * @test
+     */
+    public function testForeverWithNumericValue(): void
+    {
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
+
+        $client->shouldReceive('zadd')->andReturn($client);
+
+        // Numeric values are NOT serialized (optimization)
+        $client->shouldReceive('set')
+            ->once()
+            ->with('prefix:mykey', 42)
+            ->andReturn($client);
+
+        $client->shouldReceive('exec')
+            ->once()
+            ->andReturn([1, true]);
+
+        $store = $this->createStore($connection);
+        $result = $store->allTagOps()->forever()->execute(
+            'mykey',
+            42,
+            ['_all:tag:users:entries']
+        );
+
+        $this->assertTrue($result);
+    }
 }

@@ -20,20 +20,7 @@ class ForgetTest extends TestCase
     /**
      * @test
      */
-    public function testForgetMethodProperlyCallsRedis(): void
-    {
-        $connection = $this->mockConnection();
-        $connection->shouldReceive('del')->once()->with('prefix:foo')->andReturn(1);
-
-        $redis = $this->createStore($connection);
-        $result = $redis->forget('foo');
-        $this->assertTrue($result);
-    }
-
-    /**
-     * @test
-     */
-    public function testForgetReturnsTrue(): void
+    public function testForgetReturnsTrueWhenKeyExists(): void
     {
         $connection = $this->mockConnection();
         $connection->shouldReceive('del')->once()->with('prefix:foo')->andReturn(1);
@@ -45,14 +32,13 @@ class ForgetTest extends TestCase
     /**
      * @test
      */
-    public function testForgetNonExistentKeyReturnsTrue(): void
+    public function testForgetReturnsFalseWhenKeyDoesNotExist(): void
     {
-        // Redis del() returns 0 when key doesn't exist, but we cast to bool
+        // Redis del() returns 0 when key doesn't exist, cast to bool = false
         $connection = $this->mockConnection();
         $connection->shouldReceive('del')->once()->with('prefix:nonexistent')->andReturn(0);
 
         $redis = $this->createStore($connection);
-        // Should still return true (key is "forgotten" even if it didn't exist)
         $this->assertFalse($redis->forget('nonexistent'));
     }
 }

@@ -64,4 +64,20 @@ class PutTest extends TestCase
         $redis = $this->createStore($connection);
         $this->assertTrue($redis->put('foo', $array, 60));
     }
+
+    /**
+     * @test
+     */
+    public function testPutEnforcesMinimumTtlOfOne(): void
+    {
+        $connection = $this->mockConnection();
+        // TTL of 0 should become 1 (Redis requires positive TTL for SETEX)
+        $connection->shouldReceive('setex')
+            ->once()
+            ->with('prefix:foo', 1, serialize('bar'))
+            ->andReturn(true);
+
+        $redis = $this->createStore($connection);
+        $this->assertTrue($redis->put('foo', 'bar', 0));
+    }
 }
