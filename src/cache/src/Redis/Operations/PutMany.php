@@ -86,7 +86,7 @@ class PutMany
 
             foreach ($values as $key => $value) {
                 // Use serialization helper to respect client configuration
-                $serializedValue = $this->serialization->serialize($value);
+                $serializedValue = $this->serialization->serialize($conn, $value);
 
                 $multi->setex(
                     $prefix . $key,
@@ -136,7 +136,7 @@ class PutMany
             foreach ($values as $key => $value) {
                 $keys[] = $prefix . $key;
                 // Use serialization helper for Lua arguments
-                $args[] = $this->serialization->serializeForLua($value);
+                $args[] = $this->serialization->serializeForLua($conn, $value);
             }
 
             // Combine keys and args for eval/evalSha

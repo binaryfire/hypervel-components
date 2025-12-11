@@ -72,7 +72,7 @@ class Put
             $client->setex(
                 $prefix . $key,
                 max(1, $seconds),
-                $this->serialization->serialize($value)
+                $this->serialization->serialize($conn, $value)
             );
 
             // Store reverse index of tags for this key
@@ -194,7 +194,7 @@ LUA;
             $args = [
                 $prefix . $key,                              // KEYS[1]
                 $this->context->reverseIndexKey($key),       // KEYS[2]
-                $this->serialization->serializeForLua($value), // ARGV[1]
+                $this->serialization->serializeForLua($conn, $value), // ARGV[1]
                 max(1, $seconds),                            // ARGV[2]
                 $this->context->fullTagPrefix(),             // ARGV[3]
                 $this->context->fullRegistryKey(),           // ARGV[4]

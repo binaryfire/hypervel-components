@@ -244,6 +244,7 @@ class AllTaggedCacheTest extends TestCase
     public function testFlush(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
         // Flush operation scans tag sets and deletes entries
         $connection->shouldReceive('zScan')
@@ -259,8 +260,8 @@ class AllTaggedCacheTest extends TestCase
             ->with('prefix:_all:tag:people:entries', 0, '*', 1000)
             ->andReturnNull();
 
-        // Delete cache entries (on connection, not client)
-        $connection->shouldReceive('del')
+        // Delete cache entries (via pipeline on client)
+        $client->shouldReceive('del')
             ->once()
             ->with('prefix:key1', 'prefix:key2')
             ->andReturn(2);

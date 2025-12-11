@@ -29,7 +29,7 @@ class Forever
         return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value) {
             return (bool) $conn->set(
                 $this->context->prefix() . $key,
-                $this->serialization->serialize($value)
+                $this->serialization->serialize($conn, $value)
             );
         });
     }

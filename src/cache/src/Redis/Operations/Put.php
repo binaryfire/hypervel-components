@@ -30,7 +30,7 @@ class Put
             return (bool) $conn->setex(
                 $this->context->prefix() . $key,
                 max(1, $seconds),
-                $this->serialization->serialize($value)
+                $this->serialization->serialize($conn, $value)
             );
         });
     }

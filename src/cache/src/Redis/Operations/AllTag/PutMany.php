@@ -61,7 +61,7 @@ class PutMany
             $preparedEntries = [];
             foreach ($values as $key => $value) {
                 $namespacedKey = $namespace . $key;
-                $preparedEntries[$namespacedKey] = $this->serialization->serialize($value);
+                $preparedEntries[$namespacedKey] = $this->serialization->serialize($conn, $value);
             }
 
             $namespacedKeys = array_keys($preparedEntries);
@@ -109,7 +109,7 @@ class PutMany
             $preparedEntries = [];
             foreach ($values as $key => $value) {
                 $namespacedKey = $namespace . $key;
-                $preparedEntries[$namespacedKey] = $this->serialization->serialize($value);
+                $preparedEntries[$namespacedKey] = $this->serialization->serialize($conn, $value);
             }
 
             $namespacedKeys = array_keys($preparedEntries);

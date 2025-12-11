@@ -64,7 +64,7 @@ class RememberForever
             $value = $client->get($prefixedKey);
 
             if ($value !== false && $value !== null) {
-                return [$this->serialization->unserialize($value), true];
+                return [$this->serialization->unserialize($conn, $value), true];
             }
 
             // Cache miss - execute callback
@@ -77,7 +77,7 @@ class RememberForever
             // Store the actual cache value without expiration
             $client->set(
                 $prefixedKey,
-                $this->serialization->serialize($value)
+                $this->serialization->serialize($conn, $value)
             );
 
             // Store reverse index of tags for this key (no expiration for forever)
@@ -143,7 +143,7 @@ class RememberForever
             $value = $client->get($prefixedKey);
 
             if ($value !== false && $value !== null) {
-                return [$this->serialization->unserialize($value), true];
+                return [$this->serialization->unserialize($conn, $value), true];
             }
 
             // Cache miss - execute callback
@@ -201,7 +201,7 @@ LUA;
             $args = [
                 $prefixedKey,                                // KEYS[1]
                 $this->context->reverseIndexKey($key),       // KEYS[2]
-                $this->serialization->serializeForLua($value), // ARGV[1]
+                $this->serialization->serializeForLua($conn, $value), // ARGV[1]
                 $this->context->fullTagPrefix(),             // ARGV[2]
                 $this->context->fullRegistryKey(),           // ARGV[3]
                 $key,                                        // ARGV[4]

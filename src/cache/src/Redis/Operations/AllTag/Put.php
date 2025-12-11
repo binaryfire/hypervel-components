@@ -54,7 +54,7 @@ class Put
             $client = $conn->client();
             $prefix = $this->context->prefix();
             $score = now()->addSeconds($seconds)->getTimestamp();
-            $serialized = $this->serialization->serialize($value);
+            $serialized = $this->serialization->serialize($conn, $value);
 
             $pipeline = $client->pipeline();
 
@@ -85,7 +85,7 @@ class Put
             $client = $conn->client();
             $prefix = $this->context->prefix();
             $score = now()->addSeconds($seconds)->getTimestamp();
-            $serialized = $this->serialization->serialize($value);
+            $serialized = $this->serialization->serialize($conn, $value);
 
             // ZADD to each tag's sorted set (sequential - cross-slot)
             foreach ($tagIds as $tagId) {

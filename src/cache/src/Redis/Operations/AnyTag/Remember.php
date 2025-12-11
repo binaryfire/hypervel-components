@@ -68,7 +68,7 @@ class Remember
             $value = $client->get($prefixedKey);
 
             if ($value !== false && $value !== null) {
-                return [$this->serialization->unserialize($value), true];
+                return [$this->serialization->unserialize($conn, $value), true];
             }
 
             // Cache miss - execute callback
@@ -82,7 +82,7 @@ class Remember
             $client->setex(
                 $prefixedKey,
                 max(1, $seconds),
-                $this->serialization->serialize($value)
+                $this->serialization->serialize($conn, $value)
             );
 
             // Store reverse index of tags for this key
@@ -155,7 +155,7 @@ class Remember
             $value = $client->get($prefixedKey);
 
             if ($value !== false && $value !== null) {
-                return [$this->serialization->unserialize($value), true];
+                return [$this->serialization->unserialize($conn, $value), true];
             }
 
             // Cache miss - execute callback
@@ -218,7 +218,7 @@ LUA;
             $args = [
                 $prefixedKey,                                // KEYS[1]
                 $this->context->reverseIndexKey($key),       // KEYS[2]
-                $this->serialization->serializeForLua($value), // ARGV[1]
+                $this->serialization->serializeForLua($conn, $value), // ARGV[1]
                 max(1, $seconds),                            // ARGV[2]
                 $this->context->fullTagPrefix(),             // ARGV[3]
                 $this->context->fullRegistryKey(),           // ARGV[4]

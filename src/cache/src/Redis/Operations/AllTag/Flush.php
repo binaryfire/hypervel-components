@@ -6,14 +6,18 @@ namespace Hypervel\Cache\Redis\Operations\AllTag;
 
 use Hypervel\Cache\Redis\Support\StoreContext;
 use Hypervel\Redis\RedisConnection;
+use RedisCluster;
 
 /**
  * Flushes all cache entries associated with all tags.
  *
  * This operation:
  * 1. Gets all cache keys from the tag sorted sets
- * 2. Deletes the cache keys in chunks (1000 at a time)
+ * 2. Deletes the cache keys in chunks (1000 at a time) using a single connection
  * 3. Deletes the tag sorted sets themselves
+ *
+ * Optimized to use a single connection checkout for all chunk deletions,
+ * with pipeline batching in standard mode for maximum efficiency.
  */
 class Flush
 {
@@ -39,21 +43,55 @@ class Flush
     /**
      * Flush the individual cache entries for the tags.
      *
+     * Uses a single connection for all chunk deletions to avoid pool
+     * checkout/release overhead per chunk. In standard mode, uses pipeline
+     * for batching. In cluster mode, uses sequential commands.
+     *
      * @param array<string> $tagIds Array of tag identifiers
      */
     private function flushValues(array $tagIds): void
     {
         $prefix = $this->context->prefix();
 
+        // Collect all entries and prepare chunks
+        // (materialize the LazyCollection to get prefixed keys)
         $entries = $this->getEntries->execute($tagIds)
-            ->map(fn (string $key) => $prefix . $key)
-            ->chunk(self::CHUNK_SIZE);
+            ->map(fn (string $key) => $prefix . $key);
 
-        foreach ($entries as $cacheKeys) {
-            $this->context->withConnection(function (RedisConnection $conn) use ($cacheKeys) {
-                $conn->del(...$cacheKeys);
-            });
-        }
+        // Use a single connection for all chunk deletions
+        $this->context->withConnection(function (RedisConnection $conn) use ($entries) {
+            $client = $conn->client();
+            $isCluster = $client instanceof RedisCluster;
+
+            foreach ($entries->chunk(self::CHUNK_SIZE) as $chunk) {
+                $keys = $chunk->all();
+
+                if (empty($keys)) {
+                    continue;
+                }
+
+                if ($isCluster) {
+                    // Cluster mode: sequential DEL (keys may be in different slots)
+                    $client->del(...$keys);
+                } else {
+                    // Standard mode: pipeline for batching
+                    $this->deleteChunkPipelined($client, $keys);
+                }
+            }
+        });
+    }
+
+    /**
+     * Delete a chunk of keys using pipeline.
+     *
+     * @param \Redis|object $client The Redis client (or mock in tests)
+     * @param array<string> $keys Keys to delete
+     */
+    private function deleteChunkPipelined(mixed $client, array $keys): void
+    {
+        $pipeline = $client->pipeline();
+        $pipeline->del(...$keys);
+        $pipeline->exec();
     }
 
     /**

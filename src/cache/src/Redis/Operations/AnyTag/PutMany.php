@@ -90,7 +90,7 @@ class PutMany
                     $client->setex(
                         $prefix . $key,
                         $ttl,
-                        $this->serialization->serialize($value)
+                        $this->serialization->serialize($conn, $value)
                     );
 
                     // 2. Store reverse index of tags for this key
@@ -195,7 +195,7 @@ class PutMany
                     $pipeline->setex(
                         $prefix . $key,
                         $ttl,
-                        $this->serialization->serialize($value)
+                        $this->serialization->serialize($conn, $value)
                     );
 
                     // 2. Store reverse index of tags for this key

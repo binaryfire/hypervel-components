@@ -44,7 +44,7 @@ class RememberForever
             $value = $conn->get($prefixedKey);
 
             if ($value !== false && $value !== null) {
-                return [$this->serialization->unserialize($value), true];
+                return [$this->serialization->unserialize($conn, $value), true];
             }
 
             // Cache miss - execute callback and store result forever (no TTL)
@@ -52,7 +52,7 @@ class RememberForever
 
             $conn->set(
                 $prefixedKey,
-                $this->serialization->serialize($value)
+                $this->serialization->serialize($conn, $value)
             );
 
             return [$value, false];

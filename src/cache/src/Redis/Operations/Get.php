@@ -32,7 +32,7 @@ class Get
         return $this->context->withConnection(function (RedisConnection $conn) use ($key) {
             $value = $conn->get($this->context->prefix() . $key);
 
-            return $this->serialization->unserialize($value);
+            return $this->serialization->unserialize($conn, $value);
         });
     }
 }

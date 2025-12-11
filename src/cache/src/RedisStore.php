@@ -8,6 +8,7 @@ use Hyperf\Redis\Pool\PoolFactory;
 use Hyperf\Redis\RedisFactory;
 use Hyperf\Redis\RedisProxy;
 use Hypervel\Cache\Contracts\LockProvider;
+use Hypervel\Cache\Exceptions\RedisCacheException;
 use Hypervel\Cache\Redis\AllTaggedCache;
 use Hypervel\Cache\Redis\AllTagSet;
 use Hypervel\Cache\Redis\AnyTaggedCache;
@@ -388,7 +389,7 @@ class RedisStore extends TaggableStore implements LockProvider
      */
     public function getSerialization(): Serialization
     {
-        return $this->serialization ??= new Serialization($this->getContext());
+        return $this->serialization ??= new Serialization();
     }
 
     /**
@@ -401,18 +402,42 @@ class RedisStore extends TaggableStore implements LockProvider
 
     /**
      * Serialize the value.
+     *
+     * @deprecated Use Serialization::serialize() with a RedisConnection instead.
+     *
+     * This method is intentionally disabled to prevent an N+1 pool checkout bug.
+     * If serialization methods acquire their own connection, batch operations like
+     * putMany(1000) would checkout 1001 connections (1 for the operation + 1000
+     * for serialization) instead of 1, causing massive performance degradation.
+     *
+     * @throws RedisCacheException Always throws - use Serialization::serialize() instead
      */
-    protected function serialize(mixed $value): mixed
+    protected function serialize(mixed $value): never
     {
-        return $this->getSerialization()->serialize($value);
+        throw new RedisCacheException(
+            'RedisStore::serialize() is disabled to prevent N+1 pool checkout bugs. '
+            . 'Use Serialization::serialize($conn, $value) inside a withConnection() callback instead.'
+        );
     }
 
     /**
      * Unserialize the value.
+     *
+     * @deprecated Use Serialization::unserialize() with a RedisConnection instead.
+     *
+     * This method is intentionally disabled to prevent an N+1 pool checkout bug.
+     * If serialization methods acquire their own connection, batch operations like
+     * many(1000) would checkout 1001 connections (1 for the operation + 1000
+     * for unserialization) instead of 1, causing massive performance degradation.
+     *
+     * @throws RedisCacheException Always throws - use Serialization::unserialize() instead
      */
-    protected function unserialize(mixed $value): mixed
+    protected function unserialize(mixed $value): never
     {
-        return $this->getSerialization()->unserialize($value);
+        throw new RedisCacheException(
+            'RedisStore::unserialize() is disabled to prevent N+1 pool checkout bugs. '
+            . 'Use Serialization::unserialize($conn, $value) inside a withConnection() callback instead.'
+        );
     }
 
     /**

@@ -58,7 +58,7 @@ class Add
             // First try to add the key with NX flag
             $added = $client->set(
                 $prefix . $key,
-                $this->serialization->serialize($value),
+                $this->serialization->serialize($conn, $value),
                 ['EX' => max(1, $seconds), 'NX']
             );
 
@@ -164,7 +164,7 @@ LUA;
             $args = [
                 $prefix . $key,                              // KEYS[1]
                 $this->context->reverseIndexKey($key),       // KEYS[2]
-                $this->serialization->serializeForLua($value), // ARGV[1]
+                $this->serialization->serializeForLua($conn, $value), // ARGV[1]
                 max(1, $seconds),                            // ARGV[2]
                 $this->context->fullTagPrefix(),             // ARGV[3]
                 $this->context->fullRegistryKey(),           // ARGV[4]

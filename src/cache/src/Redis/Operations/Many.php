@@ -45,7 +45,7 @@ class Many
             $results = [];
 
             foreach ($values as $index => $value) {
-                $results[$keys[$index]] = $this->serialization->unserialize($value);
+                $results[$keys[$index]] = $this->serialization->unserialize($conn, $value);
             }
 
             return $results;

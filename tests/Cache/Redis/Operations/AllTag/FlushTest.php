@@ -27,6 +27,7 @@ class FlushTest extends TestCase
     public function testFlushDeletesCacheEntriesAndTagSets(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
         // Mock GetEntries to return cache keys
         $getEntries = m::mock(GetEntries::class);
@@ -35,8 +36,8 @@ class FlushTest extends TestCase
             ->with(['_all:tag:users:entries'])
             ->andReturn(new LazyCollection(['key1', 'key2']));
 
-        // Should delete the cache entries (with prefix)
-        $connection->shouldReceive('del')
+        // Should delete the cache entries (with prefix) via pipeline
+        $client->shouldReceive('del')
             ->once()
             ->with('prefix:key1', 'prefix:key2')
             ->andReturn(2);
@@ -59,6 +60,7 @@ class FlushTest extends TestCase
     public function testFlushWithMultipleTagsDeletesAllEntriesAndTagSets(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
         // Mock GetEntries to return cache keys from multiple tags
         $getEntries = m::mock(GetEntries::class);
@@ -67,8 +69,8 @@ class FlushTest extends TestCase
             ->with(['_all:tag:users:entries', '_all:tag:posts:entries'])
             ->andReturn(new LazyCollection(['user_key1', 'user_key2', 'post_key1']));
 
-        // Should delete all cache entries (with prefix)
-        $connection->shouldReceive('del')
+        // Should delete all cache entries (with prefix) via pipeline
+        $client->shouldReceive('del')
             ->once()
             ->with('prefix:user_key1', 'prefix:user_key2', 'prefix:post_key1')
             ->andReturn(3);
@@ -120,6 +122,7 @@ class FlushTest extends TestCase
     public function testFlushChunksLargeEntrySets(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
         // Create more than CHUNK_SIZE (1000) entries
         $entries = [];
@@ -134,22 +137,22 @@ class FlushTest extends TestCase
             ->with(['_all:tag:users:entries'])
             ->andReturn(new LazyCollection($entries));
 
-        // First chunk: 1000 entries
+        // First chunk: 1000 entries (via pipeline on client)
         $firstChunkArgs = [];
         for ($i = 1; $i <= 1000; $i++) {
             $firstChunkArgs[] = "prefix:key{$i}";
         }
-        $connection->shouldReceive('del')
+        $client->shouldReceive('del')
             ->once()
             ->with(...$firstChunkArgs)
             ->andReturn(1000);
 
-        // Second chunk: 500 entries
+        // Second chunk: 500 entries (via pipeline on client)
         $secondChunkArgs = [];
         for ($i = 1001; $i <= 1500; $i++) {
             $secondChunkArgs[] = "prefix:key{$i}";
         }
-        $connection->shouldReceive('del')
+        $client->shouldReceive('del')
             ->once()
             ->with(...$secondChunkArgs)
             ->andReturn(500);
@@ -172,6 +175,7 @@ class FlushTest extends TestCase
     public function testFlushUsesCorrectPrefix(): void
     {
         $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
 
         // Mock GetEntries to return cache keys
         $getEntries = m::mock(GetEntries::class);
@@ -180,8 +184,8 @@ class FlushTest extends TestCase
             ->with(['_all:tag:users:entries'])
             ->andReturn(new LazyCollection(['mykey']));
 
-        // Should use custom prefix for cache entries
-        $connection->shouldReceive('del')
+        // Should use custom prefix for cache entries (via pipeline on client)
+        $client->shouldReceive('del')
             ->once()
             ->with('custom_prefix:mykey')
             ->andReturn(1);

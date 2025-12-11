@@ -66,7 +66,7 @@ class Remember
             $value = $client->get($prefixedKey);
 
             if ($value !== false && $value !== null) {
-                return [$this->serialization->unserialize($value), true];
+                return [$this->serialization->unserialize($conn, $value), true];
             }
 
             // Cache miss - execute callback
@@ -74,7 +74,7 @@ class Remember
 
             // Now store with tag tracking using pipeline
             $score = now()->addSeconds($seconds)->getTimestamp();
-            $serialized = $this->serialization->serialize($value);
+            $serialized = $this->serialization->serialize($conn, $value);
 
             $pipeline = $client->pipeline();
 
@@ -111,7 +111,7 @@ class Remember
             $value = $client->get($prefixedKey);
 
             if ($value !== false && $value !== null) {
-                return [$this->serialization->unserialize($value), true];
+                return [$this->serialization->unserialize($conn, $value), true];
             }
 
             // Cache miss - execute callback
@@ -119,7 +119,7 @@ class Remember
 
             // Now store with tag tracking using sequential commands
             $score = now()->addSeconds($seconds)->getTimestamp();
-            $serialized = $this->serialization->serialize($value);
+            $serialized = $this->serialization->serialize($conn, $value);
 
             // ZADD to each tag's sorted set (sequential - cross-slot)
             foreach ($tagIds as $tagId) {

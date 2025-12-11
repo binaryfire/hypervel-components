@@ -51,7 +51,7 @@ class Forever
         return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $tagIds) {
             $client = $conn->client();
             $prefix = $this->context->prefix();
-            $serialized = $this->serialization->serialize($value);
+            $serialized = $this->serialization->serialize($conn, $value);
 
             $pipeline = $client->pipeline();
 
@@ -78,7 +78,7 @@ class Forever
         return $this->context->withConnection(function (RedisConnection $conn) use ($key, $value, $tagIds) {
             $client = $conn->client();
             $prefix = $this->context->prefix();
-            $serialized = $this->serialization->serialize($value);
+            $serialized = $this->serialization->serialize($conn, $value);
 
             // ZADD to each tag's sorted set (sequential - cross-slot)
             foreach ($tagIds as $tagId) {

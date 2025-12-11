@@ -43,7 +43,7 @@ class Remember
             $value = $conn->get($prefixedKey);
 
             if ($value !== false && $value !== null) {
-                return $this->serialization->unserialize($value);
+                return $this->serialization->unserialize($conn, $value);
             }
 
             // Cache miss - execute callback and store result
@@ -52,7 +52,7 @@ class Remember
             $conn->setex(
                 $prefixedKey,
                 max(1, $seconds),
-                $this->serialization->serialize($value)
+                $this->serialization->serialize($conn, $value)
             );
 
             return $value;

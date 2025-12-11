@@ -77,14 +77,21 @@ class GetTagItems
         $prefix = $this->context->prefix();
         $prefixedKeys = array_map(fn ($key): string => $prefix . $key, $keys);
 
-        $values = $this->context->withConnection(
-            fn (RedisConnection $conn) => $conn->client()->mget($prefixedKeys)
+        $results = $this->context->withConnection(
+            function (RedisConnection $conn) use ($prefixedKeys, $keys) {
+                $values = $conn->client()->mget($prefixedKeys);
+                $items = [];
+
+                foreach ($values as $index => $value) {
+                    if ($value !== false && $value !== null) {
+                        $items[$keys[$index]] = $this->serialization->unserialize($conn, $value);
+                    }
+                }
+
+                return $items;
+            }
         );
 
-        foreach ($values as $index => $value) {
-            if ($value !== false && $value !== null) {
-                yield $keys[$index] => $this->serialization->unserialize($value);
-            }
-        }
+        yield from $results;
     }
 }

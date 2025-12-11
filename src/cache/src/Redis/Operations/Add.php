@@ -41,7 +41,7 @@ class Add
             // Returns OK if set, null/false if key already exists
             $result = $conn->client()->set(
                 $this->context->prefix() . $key,
-                $this->serialization->serialize($value),
+                $this->serialization->serialize($conn, $value),
                 ['EX' => max(1, $seconds), 'NX']
             );
 

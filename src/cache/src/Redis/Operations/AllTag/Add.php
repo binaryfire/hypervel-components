@@ -71,7 +71,7 @@ class Add
             // SET key value EX seconds NX - atomic "add if not exists"
             $result = $client->set(
                 $prefix . $key,
-                $this->serialization->serialize($value),
+                $this->serialization->serialize($conn, $value),
                 ['EX' => max(1, $seconds), 'NX']
             );
 
@@ -100,7 +100,7 @@ class Add
             // SET key value EX seconds NX - atomic "add if not exists"
             $result = $client->set(
                 $prefix . $key,
-                $this->serialization->serialize($value),
+                $this->serialization->serialize($conn, $value),
                 ['EX' => max(1, $seconds), 'NX']
             );
 

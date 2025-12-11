@@ -67,14 +67,14 @@ class RememberForever
             $value = $client->get($prefixedKey);
 
             if ($value !== false && $value !== null) {
-                return [$this->serialization->unserialize($value), true];
+                return [$this->serialization->unserialize($conn, $value), true];
             }
 
             // Cache miss - execute callback
             $value = $callback();
 
             // Now store with tag tracking using pipeline
-            $serialized = $this->serialization->serialize($value);
+            $serialized = $this->serialization->serialize($conn, $value);
 
             $pipeline = $client->pipeline();
 
@@ -111,14 +111,14 @@ class RememberForever
             $value = $client->get($prefixedKey);
 
             if ($value !== false && $value !== null) {
-                return [$this->serialization->unserialize($value), true];
+                return [$this->serialization->unserialize($conn, $value), true];
             }
 
             // Cache miss - execute callback
             $value = $callback();
 
             // Now store with tag tracking using sequential commands
-            $serialized = $this->serialization->serialize($value);
+            $serialized = $this->serialization->serialize($conn, $value);
 
             // ZADD to each tag's sorted set (sequential - cross-slot)
             foreach ($tagIds as $tagId) {

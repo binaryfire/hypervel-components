@@ -12,49 +12,33 @@ use Redis;
  *
  * This class centralizes the serialization logic needed for both
  * regular Redis operations and Lua script ARGV parameters.
+ *
+ * IMPORTANT: All methods require a RedisConnection parameter to avoid
+ * the N+1 pool checkout problem. Never add methods that call
+ * withConnection() internally - if serialization methods acquire their
+ * own connection, batch operations like putMany(1000) would checkout
+ * 1001 connections instead of 1, causing massive performance degradation.
  */
 class Serialization
 {
-    public function __construct(
-        private readonly StoreContext $context,
-    ) {}
 
     /**
      * Serialize a value for storage in Redis.
      *
      * When a serializer is configured on the connection, returns the raw value
      * (phpredis will auto-serialize). Otherwise, uses PHP serialization.
-     */
-    public function serialize(mixed $value): mixed
-    {
-        return $this->context->withConnection(function (RedisConnection $conn) use ($value) {
-            if ($conn->serialized()) {
-                return $value;
-            }
-
-            return $this->phpSerialize($value);
-        });
-    }
-
-    /**
-     * Unserialize a value retrieved from Redis.
      *
-     * When a serializer is configured on the connection, returns the value as-is
-     * (phpredis already unserialized it). Otherwise, uses PHP unserialization.
+     * @param RedisConnection $conn The connection to use for serialization checks
+     * @param mixed $value The value to serialize
+     * @return mixed The serialized value
      */
-    public function unserialize(mixed $value): mixed
+    public function serialize(RedisConnection $conn, mixed $value): mixed
     {
-        if ($value === null || $value === false) {
-            return null;
+        if ($conn->serialized()) {
+            return $value;
         }
 
-        return $this->context->withConnection(function (RedisConnection $conn) use ($value) {
-            if ($conn->serialized()) {
-                return $value;
-            }
-
-            return $this->phpUnserialize($value);
-        });
+        return $this->phpSerialize($value);
     }
 
     /**
@@ -69,32 +53,57 @@ class Serialization
      * 1. Serializer configured (igbinary/json/php): Use pack() which calls _serialize()
      * 2. No serializer, but compression enabled: PHP serialize, then compress
      * 3. No serializer, no compression: Just PHP serialize
+     *
+     * @param RedisConnection $conn The connection to use for serialization
+     * @param mixed $value The value to serialize
+     * @return string The serialized value suitable for Lua ARGV
      */
-    public function serializeForLua(mixed $value): string
+    public function serializeForLua(RedisConnection $conn, mixed $value): string
     {
-        return $this->context->withConnection(function (RedisConnection $conn) use ($value) {
-            // Case 1: Serializer configured (e.g. igbinary/json)
-            // pack() calls _serialize() which handles serialization AND compression
-            if ($conn->serialized()) {
-                return $conn->pack([$value])[0];
-            }
+        // Case 1: Serializer configured (e.g. igbinary/json)
+        // pack() calls _serialize() which handles serialization AND compression
+        if ($conn->serialized()) {
+            return $conn->pack([$value])[0];
+        }
 
-            // No serializer - must PHP-serialize first
-            $serialized = $this->phpSerialize($value);
+        // No serializer - must PHP-serialize first
+        $serialized = $this->phpSerialize($value);
 
-            // Case 2: Check if compression is enabled (even without serializer)
-            $client = $conn->client();
+        // Case 2: Check if compression is enabled (even without serializer)
+        $client = $conn->client();
 
-            if ($client->getOption(Redis::OPT_COMPRESSION) !== Redis::COMPRESSION_NONE) {
-                // _serialize() applies compression even with SERIALIZER_NONE
-                // Cast to string in case serialize() returned a numeric value
-                return $client->_serialize(is_numeric($serialized) ? (string) $serialized : $serialized);
-            }
-
-            // Case 3: No serializer, no compression
+        if ($client->getOption(Redis::OPT_COMPRESSION) !== Redis::COMPRESSION_NONE) {
+            // _serialize() applies compression even with SERIALIZER_NONE
             // Cast to string in case serialize() returned a numeric value
-            return is_numeric($serialized) ? (string) $serialized : $serialized;
-        });
+            return $client->_serialize(is_numeric($serialized) ? (string) $serialized : $serialized);
+        }
+
+        // Case 3: No serializer, no compression
+        // Cast to string in case serialize() returned a numeric value
+        return is_numeric($serialized) ? (string) $serialized : $serialized;
+    }
+
+    /**
+     * Unserialize a value retrieved from Redis.
+     *
+     * When a serializer is configured on the connection, returns the value as-is
+     * (phpredis already unserialized it). Otherwise, uses PHP unserialization.
+     *
+     * @param RedisConnection $conn The connection to use for unserialization checks
+     * @param mixed $value The value to unserialize
+     * @return mixed The unserialized value, or null if input was null/false
+     */
+    public function unserialize(RedisConnection $conn, mixed $value): mixed
+    {
+        if ($value === null || $value === false) {
+            return null;
+        }
+
+        if ($conn->serialized()) {
+            return $value;
+        }
+
+        return $this->phpUnserialize($value);
     }
 
     /**
