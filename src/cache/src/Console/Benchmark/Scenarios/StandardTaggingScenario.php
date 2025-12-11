@@ -62,8 +62,8 @@ class StandardTaggingScenario implements ScenarioInterface
         $writeTime = (hrtime(true) - $start) / 1e9;
         $writeRate = $items / $writeTime;
 
-        // 2. Flush (Flush one tag, which should remove all items)
-        $ctx->line('  Flushing items by tag...');
+        // 2. Flush (Flush one tag, which removes all $items items since all share this tag)
+        $ctx->line("  Flushing {$items} items via 1 tag...");
         $start = hrtime(true);
         $store->tags([$tags[0]])->flush();
         $flushTime = (hrtime(true) - $start) / 1e9;

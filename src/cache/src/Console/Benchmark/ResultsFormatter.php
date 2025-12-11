@@ -34,11 +34,10 @@ class ResultsFormatter
         ],
         'Tagged Operations' => [
             'write_rate' => ['label' => 'put()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'standard'],
-            'write_time' => ['label' => 'put() total', 'unit' => 'Seconds', 'format' => 'time', 'better' => 'lower', 'scenario' => 'standard'],
             'read_rate' => ['label' => 'get()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'read'],
-            'flush_time' => ['label' => 'flush()', 'unit' => 'Seconds', 'format' => 'time', 'better' => 'lower', 'scenario' => 'standard'],
             'add_rate_tagged' => ['label' => 'add()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'standard', 'key' => 'add_rate'],
             'putmany_rate_tagged' => ['label' => 'putMany()', 'unit' => 'Items/sec', 'format' => 'rate', 'better' => 'higher', 'scenario' => 'standard', 'key' => 'putmany_rate'],
+            'flush_time' => ['label' => 'flush() 1 tag', 'unit' => 'Seconds', 'format' => 'time', 'better' => 'lower', 'scenario' => 'standard'],
         ],
         'Maintenance' => [
             'cleanup_time' => ['label' => 'Prune stale tags', 'unit' => 'Seconds', 'format' => 'time', 'better' => 'lower', 'scenario' => 'cleanup'],

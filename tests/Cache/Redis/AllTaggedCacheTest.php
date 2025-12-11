@@ -364,4 +364,219 @@ class AllTaggedCacheTest extends TestCase
 
         $this->assertSame(7, $result);
     }
+
+    /**
+     * @test
+     */
+    public function testRememberReturnsExistingValueOnCacheHit(): void
+    {
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
+        $key = sha1('_all:tag:users:entries') . ':profile';
+
+        // Remember operation uses client->get() directly
+        $client->shouldReceive('get')
+            ->once()
+            ->with("prefix:{$key}")
+            ->andReturn(serialize('cached_value'));
+
+        $store = $this->createStore($connection);
+        $result = $store->tags(['users'])->remember('profile', 60, fn () => 'new_value');
+
+        $this->assertSame('cached_value', $result);
+    }
+
+    /**
+     * @test
+     */
+    public function testRememberCallsCallbackAndStoresValueOnMiss(): void
+    {
+        Carbon::setTestNow('2000-01-01 00:00:00');
+
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
+        $key = sha1('_all:tag:users:entries') . ':profile';
+        $expectedScore = now()->timestamp + 60;
+
+        // Cache miss
+        $client->shouldReceive('get')
+            ->once()
+            ->with("prefix:{$key}")
+            ->andReturnNull();
+
+        // Pipeline for ZADD + SETEX on miss
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:users:entries', $expectedScore, $key)->andReturn($client);
+        $client->shouldReceive('setex')->once()->with("prefix:{$key}", 60, serialize('computed_value'))->andReturn($client);
+        $client->shouldReceive('exec')->once()->andReturn([1, true]);
+
+        $callCount = 0;
+        $store = $this->createStore($connection);
+        $result = $store->tags(['users'])->remember('profile', 60, function () use (&$callCount) {
+            $callCount++;
+
+            return 'computed_value';
+        });
+
+        $this->assertSame('computed_value', $result);
+        $this->assertSame(1, $callCount);
+    }
+
+    /**
+     * @test
+     */
+    public function testRememberDoesNotCallCallbackOnCacheHit(): void
+    {
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
+        $key = sha1('_all:tag:users:entries') . ':data';
+
+        $client->shouldReceive('get')
+            ->once()
+            ->with("prefix:{$key}")
+            ->andReturn(serialize('existing_value'));
+
+        $callCount = 0;
+        $store = $this->createStore($connection);
+        $result = $store->tags(['users'])->remember('data', 60, function () use (&$callCount) {
+            $callCount++;
+
+            return 'new_value';
+        });
+
+        $this->assertSame('existing_value', $result);
+        $this->assertSame(0, $callCount, 'Callback should not be called on cache hit');
+    }
+
+    /**
+     * @test
+     */
+    public function testRememberForeverReturnsExistingValueOnCacheHit(): void
+    {
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
+        $key = sha1('_all:tag:config:entries') . ':settings';
+
+        $client->shouldReceive('get')
+            ->once()
+            ->with("prefix:{$key}")
+            ->andReturn(serialize('cached_settings'));
+
+        $store = $this->createStore($connection);
+        $result = $store->tags(['config'])->rememberForever('settings', fn () => 'new_settings');
+
+        $this->assertSame('cached_settings', $result);
+    }
+
+    /**
+     * @test
+     */
+    public function testRememberForeverCallsCallbackAndStoresValueOnMiss(): void
+    {
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
+        $key = sha1('_all:tag:config:entries') . ':settings';
+
+        // Cache miss
+        $client->shouldReceive('get')
+            ->once()
+            ->with("prefix:{$key}")
+            ->andReturnNull();
+
+        // Pipeline for ZADD (score -1) + SET on miss
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:config:entries', -1, $key)->andReturn($client);
+        $client->shouldReceive('set')->once()->with("prefix:{$key}", serialize('computed_settings'))->andReturn($client);
+        $client->shouldReceive('exec')->once()->andReturn([1, true]);
+
+        $store = $this->createStore($connection);
+        $result = $store->tags(['config'])->rememberForever('settings', fn () => 'computed_settings');
+
+        $this->assertSame('computed_settings', $result);
+    }
+
+    /**
+     * @test
+     */
+    public function testRememberPropagatesExceptionFromCallback(): void
+    {
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
+        $key = sha1('_all:tag:users:entries') . ':data';
+
+        $client->shouldReceive('get')
+            ->once()
+            ->with("prefix:{$key}")
+            ->andReturnNull();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Callback failed');
+
+        $store = $this->createStore($connection);
+        $store->tags(['users'])->remember('data', 60, function () {
+            throw new \RuntimeException('Callback failed');
+        });
+    }
+
+    /**
+     * @test
+     */
+    public function testRememberForeverPropagatesExceptionFromCallback(): void
+    {
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
+        $key = sha1('_all:tag:config:entries') . ':data';
+
+        $client->shouldReceive('get')
+            ->once()
+            ->with("prefix:{$key}")
+            ->andReturnNull();
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Forever callback failed');
+
+        $store = $this->createStore($connection);
+        $store->tags(['config'])->rememberForever('data', function () {
+            throw new \RuntimeException('Forever callback failed');
+        });
+    }
+
+    /**
+     * @test
+     */
+    public function testRememberWithMultipleTags(): void
+    {
+        Carbon::setTestNow('2000-01-01 00:00:00');
+
+        $connection = $this->mockConnection();
+        $client = $connection->_mockClient;
+
+        $key = sha1('_all:tag:users:entries|_all:tag:posts:entries') . ':activity';
+        $expectedScore = now()->timestamp + 120;
+
+        // Cache miss
+        $client->shouldReceive('get')
+            ->once()
+            ->with("prefix:{$key}")
+            ->andReturnNull();
+
+        // Pipeline for ZADDs + SETEX on miss
+        $client->shouldReceive('pipeline')->once()->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:users:entries', $expectedScore, $key)->andReturn($client);
+        $client->shouldReceive('zadd')->once()->with('prefix:_all:tag:posts:entries', $expectedScore, $key)->andReturn($client);
+        $client->shouldReceive('setex')->once()->with("prefix:{$key}", 120, serialize('activity_data'))->andReturn($client);
+        $client->shouldReceive('exec')->once()->andReturn([1, 1, true]);
+
+        $store = $this->createStore($connection);
+        $result = $store->tags(['users', 'posts'])->remember('activity', 120, fn () => 'activity_data');
+
+        $this->assertSame('activity_data', $result);
+    }
 }
