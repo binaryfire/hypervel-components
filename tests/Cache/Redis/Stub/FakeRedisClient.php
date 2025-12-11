@@ -126,6 +126,48 @@ class FakeRedisClient extends Redis
     private string $optPrefix = '';
 
     /**
+     * Configured zScan results per key.
+     *
+     * @var array<string, array<int, array{members: array<string, float>, iterator: int}>>
+     */
+    private array $zScanResults = [];
+
+    /**
+     * Current zScan call index per key.
+     *
+     * @var array<string, int>
+     */
+    private array $zScanCallIndex = [];
+
+    /**
+     * Recorded zScan calls for assertions.
+     *
+     * @var array<int, array{key: string, pattern: ?string, count: int}>
+     */
+    private array $zScanCalls = [];
+
+    /**
+     * Recorded zRem calls for assertions.
+     *
+     * @var array<int, array{key: string, members: array<string>}>
+     */
+    private array $zRemCalls = [];
+
+    /**
+     * Configured zCard results per key.
+     *
+     * @var array<string, int>
+     */
+    private array $zCardResults = [];
+
+    /**
+     * Configured zRemRangeByScore results per key (for sequential execution).
+     *
+     * @var array<string, int>
+     */
+    private array $zRemRangeByScoreResults = [];
+
+    /**
      * Create a new fake Redis client.
      *
      * @param array<int, array{keys: array<string>, iterator: int}> $scanResults Configured scan results
@@ -134,6 +176,9 @@ class FakeRedisClient extends Redis
      * @param array<string, array<string>> $zRangeResults Configured zRange results
      * @param array<string, int> $hLenResults Configured hLen results
      * @param string $optPrefix Configured OPT_PREFIX value
+     * @param array<string, array<int, array{members: array<string, float>, iterator: int}>> $zScanResults Configured zScan results
+     * @param array<string, int> $zCardResults Configured zCard results per key
+     * @param array<string, int> $zRemRangeByScoreResults Configured zRemRangeByScore results per key
      */
     public function __construct(
         array $scanResults = [],
@@ -142,6 +187,9 @@ class FakeRedisClient extends Redis
         array $zRangeResults = [],
         array $hLenResults = [],
         string $optPrefix = '',
+        array $zScanResults = [],
+        array $zCardResults = [],
+        array $zRemRangeByScoreResults = [],
     ) {
         // Note: We intentionally do NOT call parent::__construct() to avoid
         // any connection attempts. This fake client never connects to Redis.
@@ -151,6 +199,9 @@ class FakeRedisClient extends Redis
         $this->zRangeResults = $zRangeResults;
         $this->hLenResults = $hLenResults;
         $this->optPrefix = $optPrefix;
+        $this->zScanResults = $zScanResults;
+        $this->zCardResults = $zCardResults;
+        $this->zRemRangeByScoreResults = $zRemRangeByScoreResults;
     }
 
     /**
@@ -348,7 +399,7 @@ class FakeRedisClient extends Redis
             $this->pipelineQueue[] = ['method' => 'zRemRangeByScore', 'args' => [$key, $min, $max]];
             return $this;
         }
-        return 0;
+        return $this->zRemRangeByScoreResults[$key] ?? 0;
     }
 
     /**
@@ -362,7 +413,7 @@ class FakeRedisClient extends Redis
             $this->pipelineQueue[] = ['method' => 'zCard', 'args' => [$key]];
             return $this;
         }
-        return 0;
+        return $this->zCardResults[$key] ?? 0;
     }
 
     /**
@@ -382,6 +433,69 @@ class FakeRedisClient extends Redis
     }
 
     /**
+     * Simulate Redis ZSCAN with proper reference parameter handling.
+     *
+     * @param string $key Sorted set key
+     * @param int|string|null $iterator Cursor (modified by reference)
+     * @param string|null $pattern Optional pattern to match
+     * @param int $count Optional count hint
+     * @return Redis|array<string, float>|false
+     */
+    public function zscan(string $key, int|string|null &$iterator, ?string $pattern = null, int $count = 0): Redis|array|false
+    {
+        // Record the call for assertions
+        $this->zScanCalls[] = ['key' => $key, 'pattern' => $pattern, 'count' => $count];
+
+        // Initialize call index for this key if not set
+        if (! isset($this->zScanCallIndex[$key])) {
+            $this->zScanCallIndex[$key] = 0;
+        }
+
+        if (! isset($this->zScanResults[$key][$this->zScanCallIndex[$key]])) {
+            $iterator = 0;
+            return false;
+        }
+
+        $result = $this->zScanResults[$key][$this->zScanCallIndex[$key]];
+        $iterator = $result['iterator'];
+        $this->zScanCallIndex[$key]++;
+
+        return $result['members'];
+    }
+
+    /**
+     * Get recorded zScan calls for test assertions.
+     *
+     * @return array<int, array{key: string, pattern: ?string, count: int}>
+     */
+    public function getZScanCalls(): array
+    {
+        return $this->zScanCalls;
+    }
+
+    /**
+     * Simulate Redis ZREM.
+     *
+     * @return int|false Number of members removed
+     */
+    public function zRem(mixed $key, mixed $member, mixed ...$other_members): Redis|int|false
+    {
+        $allMembers = array_merge([$member], $other_members);
+        $this->zRemCalls[] = ['key' => $key, 'members' => $allMembers];
+        return count($allMembers);
+    }
+
+    /**
+     * Get recorded zRem calls for test assertions.
+     *
+     * @return array<int, array{key: string, members: array<string>}>
+     */
+    public function getZRemCalls(): array
+    {
+        return $this->zRemCalls;
+    }
+
+    /**
      * Reset the client state for reuse in tests.
      * Note: This is a test helper, not the Redis::reset() connection reset.
      */
@@ -391,6 +505,9 @@ class FakeRedisClient extends Redis
         $this->scanCalls = [];
         $this->hScanCallIndex = [];
         $this->hScanCalls = [];
+        $this->zScanCallIndex = [];
+        $this->zScanCalls = [];
+        $this->zRemCalls = [];
         $this->execCallIndex = 0;
         $this->inPipeline = false;
         $this->pipelineQueue = [];

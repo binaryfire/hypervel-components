@@ -12,7 +12,7 @@ use RedisCluster;
  * Safely scan the Redis keyspace for keys matching a pattern.
  *
  * This class provides a memory-efficient iterator over keys using the SCAN command,
- * correctly handling the complexity of Redis OPT_PREFIX configuration.
+ * correctly handling the complexity of Redis OPT_PREFIX configuration and Redis Cluster.
  *
  * ## The OPT_PREFIX Problem
  *
@@ -42,6 +42,14 @@ use RedisCluster;
  * $strippedKey = substr($keys[0], strlen("myapp:"));  // "cache:user:1"
  * $redis->del($strippedKey);  // phpredis adds prefix -> deletes "myapp:cache:user:1" - SUCCESS!
  * ```
+ *
+ * ## Redis Cluster Support
+ *
+ * Redis Cluster requires scanning each master node separately because keys are
+ * distributed across slots on different nodes. This class handles this automatically:
+ *
+ * - For standard Redis: Uses `scan($iter, $pattern, $count)`
+ * - For RedisCluster: Iterates `_masters()` and uses `scan($iter, $node, $pattern, $count)`
  *
  * ## Usage
  *
@@ -89,11 +97,21 @@ final class SafeScan
             $scanPattern = $this->optPrefix . $pattern;
         }
 
+        // Route to cluster or standard implementation
+        if ($this->client instanceof RedisCluster) {
+            yield from $this->scanCluster($scanPattern, $count, $prefixLen);
+        } else {
+            yield from $this->scanStandard($scanPattern, $count, $prefixLen);
+        }
+    }
+
+    /**
+     * Scan a standard (non-cluster) Redis instance.
+     */
+    private function scanStandard(string $scanPattern, int $count, int $prefixLen): Generator
+    {
         // phpredis 6.1.0+ uses null as initial cursor, older versions use 0
-        $iterator = match (true) {
-            version_compare(phpversion('redis') ?: '0', '6.1.0', '>=') => null,
-            default => 0,
-        };
+        $iterator = $this->getInitialCursor();
 
         do {
             // SCAN returns keys as they exist in Redis (with full prefix)
@@ -106,6 +124,9 @@ final class SafeScan
 
             // Yield keys with OPT_PREFIX stripped so they can be used directly
             // with other phpredis commands that auto-add the prefix.
+            // NOTE: We inline this loop instead of using `yield from` a sub-generator
+            // because `yield from` would reset auto-increment keys for each batch,
+            // causing key collisions when the result is passed to iterator_to_array().
             foreach ($keys as $key) {
                 if ($prefixLen > 0 && str_starts_with($key, $this->optPrefix)) {
                     yield substr($key, $prefixLen);
@@ -114,5 +135,57 @@ final class SafeScan
                 }
             }
         } while ($iterator > 0);
+    }
+
+    /**
+     * Scan a Redis Cluster by iterating all master nodes.
+     *
+     * RedisCluster::scan() has a different signature that requires specifying
+     * which node to scan. We must iterate all masters to find all keys.
+     */
+    private function scanCluster(string $scanPattern, int $count, int $prefixLen): Generator
+    {
+        /** @var RedisCluster $client */
+        $client = $this->client;
+
+        // Get all master nodes in the cluster
+        $masters = $client->_masters();
+
+        foreach ($masters as $master) {
+            // Each master node needs its own cursor
+            $iterator = $this->getInitialCursor();
+
+            do {
+                // RedisCluster::scan() signature: scan(&$iter, $node, $pattern, $count)
+                $keys = $client->scan($iterator, $master, $scanPattern, $count);
+
+                // Normalize result (phpredis returns false on failure/empty)
+                if ($keys === false || ! is_array($keys)) {
+                    $keys = [];
+                }
+
+                // Yield keys with OPT_PREFIX stripped (see comment in scanStandard)
+                foreach ($keys as $key) {
+                    if ($prefixLen > 0 && str_starts_with($key, $this->optPrefix)) {
+                        yield substr($key, $prefixLen);
+                    } else {
+                        yield $key;
+                    }
+                }
+            } while ($iterator > 0);
+        }
+    }
+
+    /**
+     * Get the initial cursor value based on phpredis version.
+     *
+     * phpredis 6.1.0+ uses null as initial cursor, older versions use 0.
+     */
+    private function getInitialCursor(): int|null
+    {
+        return match (true) {
+            version_compare(phpversion('redis') ?: '0', '6.1.0', '>=') => null,
+            default => 0,
+        };
     }
 }

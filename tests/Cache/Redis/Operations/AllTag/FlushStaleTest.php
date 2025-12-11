@@ -5,18 +5,18 @@ declare(strict_types=1);
 namespace Hypervel\Tests\Cache\Redis\Operations\AllTag;
 
 use Carbon\Carbon;
-use Hypervel\Cache\Redis\Operations\AllTag\FlushStaleEntries;
+use Hypervel\Cache\Redis\Operations\AllTag\FlushStale;
 use Hypervel\Tests\Cache\Redis\Concerns\MocksRedisConnections;
 use Hypervel\Tests\TestCase;
 use Mockery as m;
 
 /**
- * Tests for the FlushStaleEntries operation.
+ * Tests for the FlushStale operation.
  *
  * @internal
  * @coversNothing
  */
-class FlushStaleEntriesTest extends TestCase
+class FlushStaleTest extends TestCase
 {
     use MocksRedisConnections;
 
@@ -40,7 +40,7 @@ class FlushStaleEntriesTest extends TestCase
         $client->shouldReceive('exec')->once();
 
         $store = $this->createStore($connection);
-        $operation = new FlushStaleEntries($store->getContext());
+        $operation = new FlushStale($store->getContext());
 
         $operation->execute(['_all:tag:users:entries']);
     }
@@ -74,7 +74,7 @@ class FlushStaleEntriesTest extends TestCase
         $client->shouldReceive('exec')->once();
 
         $store = $this->createStore($connection);
-        $operation = new FlushStaleEntries($store->getContext());
+        $operation = new FlushStale($store->getContext());
 
         $operation->execute(['_all:tag:users:entries', '_all:tag:posts:entries', '_all:tag:comments:entries']);
     }
@@ -91,7 +91,7 @@ class FlushStaleEntriesTest extends TestCase
         $client->shouldNotReceive('pipeline');
 
         $store = $this->createStore($connection);
-        $operation = new FlushStaleEntries($store->getContext());
+        $operation = new FlushStale($store->getContext());
 
         $operation->execute([]);
     }
@@ -116,7 +116,7 @@ class FlushStaleEntriesTest extends TestCase
         $client->shouldReceive('exec')->once();
 
         $store = $this->createStore($connection, 'custom_prefix:');
-        $operation = new FlushStaleEntries($store->getContext());
+        $operation = new FlushStale($store->getContext());
 
         $operation->execute(['_all:tag:users:entries']);
     }
@@ -145,7 +145,7 @@ class FlushStaleEntriesTest extends TestCase
         $client->shouldReceive('exec')->once();
 
         $store = $this->createStore($connection);
-        $operation = new FlushStaleEntries($store->getContext());
+        $operation = new FlushStale($store->getContext());
 
         $operation->execute(['_all:tag:users:entries']);
     }
@@ -180,7 +180,7 @@ class FlushStaleEntriesTest extends TestCase
         $client->shouldReceive('exec')->once();
 
         $store = $this->createStore($connection);
-        $operation = new FlushStaleEntries($store->getContext());
+        $operation = new FlushStale($store->getContext());
 
         $operation->execute(['_all:tag:users:entries']);
     }
@@ -188,7 +188,7 @@ class FlushStaleEntriesTest extends TestCase
     /**
      * @test
      */
-    public function testFlushStaleEntriesClusterModeUsesSequentialCommands(): void
+    public function testFlushStaleEntriesClusterModeUsesMulti(): void
     {
         Carbon::setTestNow('2000-01-01 00:00:00');
 
@@ -197,13 +197,21 @@ class FlushStaleEntriesTest extends TestCase
         // Should NOT use pipeline in cluster mode
         $clusterClient->shouldNotReceive('pipeline');
 
-        // Should use sequential zRemRangeByScore calls directly on client
+        // Cluster mode uses multi() which handles cross-slot commands
+        $clusterClient->shouldReceive('multi')
+            ->once()
+            ->andReturn($clusterClient);
+
         $clusterClient->shouldReceive('zRemRangeByScore')
             ->once()
             ->with('prefix:_all:tag:users:entries', '0', (string) now()->getTimestamp())
-            ->andReturn(5);
+            ->andReturn($clusterClient);
 
-        $operation = new FlushStaleEntries($store->getContext());
+        $clusterClient->shouldReceive('exec')
+            ->once()
+            ->andReturn([5]);
+
+        $operation = new FlushStale($store->getContext());
         $operation->execute(['_all:tag:users:entries']);
     }
 
@@ -219,22 +227,31 @@ class FlushStaleEntriesTest extends TestCase
         // Should NOT use pipeline in cluster mode
         $clusterClient->shouldNotReceive('pipeline');
 
-        // Should use sequential zRemRangeByScore calls for each tag
+        // Cluster mode uses multi() which handles cross-slot commands
+        $clusterClient->shouldReceive('multi')
+            ->once()
+            ->andReturn($clusterClient);
+
+        // All tags processed in single multi block
         $timestamp = (string) now()->getTimestamp();
         $clusterClient->shouldReceive('zRemRangeByScore')
             ->once()
             ->with('prefix:_all:tag:users:entries', '0', $timestamp)
-            ->andReturn(3);
+            ->andReturn($clusterClient);
         $clusterClient->shouldReceive('zRemRangeByScore')
             ->once()
             ->with('prefix:_all:tag:posts:entries', '0', $timestamp)
-            ->andReturn(2);
+            ->andReturn($clusterClient);
         $clusterClient->shouldReceive('zRemRangeByScore')
             ->once()
             ->with('prefix:_all:tag:comments:entries', '0', $timestamp)
-            ->andReturn(0);
+            ->andReturn($clusterClient);
 
-        $operation = new FlushStaleEntries($store->getContext());
+        $clusterClient->shouldReceive('exec')
+            ->once()
+            ->andReturn([3, 2, 0]);
+
+        $operation = new FlushStale($store->getContext());
         $operation->execute(['_all:tag:users:entries', '_all:tag:posts:entries', '_all:tag:comments:entries']);
     }
 
@@ -247,13 +264,22 @@ class FlushStaleEntriesTest extends TestCase
 
         [$store, $clusterClient] = $this->createClusterStore(prefix: 'custom_prefix:');
 
+        // Cluster mode uses multi()
+        $clusterClient->shouldReceive('multi')
+            ->once()
+            ->andReturn($clusterClient);
+
         // Should use custom prefix
         $clusterClient->shouldReceive('zRemRangeByScore')
             ->once()
             ->with('custom_prefix:_all:tag:users:entries', '0', (string) now()->getTimestamp())
-            ->andReturn(1);
+            ->andReturn($clusterClient);
 
-        $operation = new FlushStaleEntries($store->getContext());
+        $clusterClient->shouldReceive('exec')
+            ->once()
+            ->andReturn([1]);
+
+        $operation = new FlushStale($store->getContext());
         $operation->execute(['_all:tag:users:entries']);
     }
 }
