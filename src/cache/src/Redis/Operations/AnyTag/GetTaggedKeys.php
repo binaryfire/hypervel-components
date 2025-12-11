@@ -14,6 +14,9 @@ use Hypervel\Redis\RedisConnection;
  * Uses adaptive scanning strategy based on hash size:
  * - At or below threshold: Uses HKEYS (faster, loads all into memory)
  * - Above threshold: Uses HSCAN (memory-efficient streaming)
+ *
+ * IMPORTANT: This implementation uses per-batch connection checkouts for HSCAN
+ * to avoid a race condition in Swoole coroutine environments. See FIXES.md for details.
  */
 class GetTaggedKeys
 {
@@ -40,22 +43,24 @@ class GetTaggedKeys
      */
     public function execute(string $tag, int $count = 1000): Generator
     {
-        return $this->context->withConnection(function (RedisConnection $conn) use ($tag, $count) {
-            $client = $conn->client();
-            $tagKey = $this->context->tagHashKey($tag);
+        $tagKey = $this->context->tagHashKey($tag);
 
-            // For small hashes, just get all at once
-            $size = $client->hlen($tagKey);
+        // Check size with a quick connection checkout
+        $size = $this->context->withConnection(
+            fn (RedisConnection $conn) => $conn->client()->hlen($tagKey)
+        );
 
-            if ($size <= $this->scanThreshold) {
-                $fields = $client->hkeys($tagKey);
+        if ($size <= $this->scanThreshold) {
+            // For small hashes, fetch all at once (safe - data fully fetched before connection release)
+            $fields = $this->context->withConnection(
+                fn (RedisConnection $conn) => $conn->client()->hkeys($tagKey)
+            );
 
-                return $this->arrayToGenerator($fields ?: []);
-            }
+            return $this->arrayToGenerator($fields ?: []);
+        }
 
-            // For large hashes, use HSCAN with Generator
-            return $this->hscanGenerator($client, $tagKey, $count);
-        });
+        // For large hashes, use HSCAN with per-batch connections
+        return $this->hscanGenerator($tagKey, $count);
     }
 
     /**
@@ -74,16 +79,23 @@ class GetTaggedKeys
     /**
      * Create a generator using HSCAN for memory-efficient iteration.
      *
-     * @param \Redis|\RedisCluster $client
+     * Acquires a connection per-batch to avoid race conditions in Swoole coroutine
+     * environments. The connection is released between HSCAN iterations, ensuring
+     * it won't be used by another coroutine while the generator is paused.
+     *
      * @return Generator<string>
      */
-    private function hscanGenerator(mixed $client, string $tagKey, int $count): Generator
+    private function hscanGenerator(string $tagKey, int $count): Generator
     {
         $iterator = null;
 
         do {
-            // phpredis: Pass iterator by reference
-            $fields = $client->hscan($tagKey, $iterator, null, $count);
+            // Acquire connection just for this HSCAN batch
+            $fields = $this->context->withConnection(
+                function (RedisConnection $conn) use ($tagKey, &$iterator, $count) {
+                    return $conn->client()->hscan($tagKey, $iterator, null, $count);
+                }
+            );
 
             if ($fields !== false && ! empty($fields)) {
                 // HSCAN returns key-value pairs, we only need keys
